@@ -1,3 +1,89 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/**
+ * Tokens en canales sRGB separados por espacio (no hex) — necesario para que
+ * `bg-success/10`, `border-primary/20`, etc. compongan alpha correctamente
+ * en NativeWind (ver src/theme/palette.ts, que es la fuente equivalente en JS
+ * y tiene un test de paridad contra este archivo).
+ *
+ * Modo claro: transcripción exacta de la paleta Sprig existente.
+ * Modo oscuro: paleta de cost-manager-web/src/styles.css (verde sobre carbón).
+ */
+@layer base {
+  :root {
+    --background: 244 241 231;
+    --foreground: 26 26 26;
+    --surface: 255 255 255;
+    --surface-2: 230 239 230;
+    --card: 255 255 255;
+    --card-foreground: 26 26 26;
+    --popover: 255 255 255;
+    --popover-foreground: 26 26 26;
+    --primary: 30 92 58;
+    --primary-foreground: 255 255 255;
+    --secondary: 230 239 230;
+    --secondary-foreground: 26 26 26;
+    --muted: 230 239 230;
+    --muted-foreground: 85 90 94;
+    --accent: 212 165 58;
+    --accent-foreground: 26 26 26;
+    --destructive: 215 49 75;
+    --destructive-foreground: 252 247 247;
+    --success: 47 125 83;
+    --success-foreground: 255 255 255;
+    --warning: 232 185 74;
+    --warning-foreground: 26 26 26;
+    --info: 0 114 213;
+    --info-foreground: 243 245 248;
+    --border: 230 232 236;
+    --input: 230 232 236;
+    --ring: 47 125 83;
+    --chart-1: 30 92 58;
+    --chart-2: 212 165 58;
+    --chart-3: 47 125 83;
+    --chart-4: 232 185 74;
+    --chart-5: 85 90 94;
+    --gradient-card-from: 255 255 255;
+    --gradient-card-to: 244 241 231;
+    --radius: 0.875rem;
+  }
+
+  .dark {
+    --background: 26 26 26;
+    --foreground: 244 241 231;
+    --surface: 30 92 58;
+    --surface-2: 47 125 83;
+    --card: 30 92 58;
+    --card-foreground: 244 241 231;
+    --popover: 30 92 58;
+    --popover-foreground: 244 241 231;
+    --primary: 212 165 58;
+    --primary-foreground: 26 26 26;
+    --secondary: 47 125 83;
+    --secondary-foreground: 244 241 231;
+    --muted: 47 125 83;
+    --muted-foreground: 230 239 230;
+    --accent: 212 165 58;
+    --accent-foreground: 26 26 26;
+    --destructive: 251 86 104;
+    --destructive-foreground: 252 247 247;
+    --success: 212 165 58;
+    --success-foreground: 26 26 26;
+    --warning: 232 185 74;
+    --warning-foreground: 26 26 26;
+    --info: 44 162 255;
+    --info-foreground: 243 245 248;
+    --border: 47 125 83;
+    --input: 47 125 83;
+    --ring: 212 165 58;
+    --chart-1: 212 165 58;
+    --chart-2: 30 92 58;
+    --chart-3: 232 185 74;
+    --chart-4: 47 125 83;
+    --chart-5: 85 90 94;
+    --gradient-card-from: 30 92 58;
+    --gradient-card-to: 23 70 46;
+  }
+}
