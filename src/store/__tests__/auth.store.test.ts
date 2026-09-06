@@ -5,6 +5,15 @@
  * para probar la lógica del store de forma aislada.
  */
 
+import { useAuthStore } from "../auth.store";
+import * as authApi from "@/api/auth.api";
+import { getStoredTokens, clearTokens } from "@/api/client";
+import {
+  cacheUser,
+  getCachedUser,
+  clearCachedUser,
+} from "@/database/local.repository";
+
 jest.mock("@/api/auth.api");
 jest.mock("@/api/client", () => ({
   getStoredTokens: jest.fn(),
@@ -21,15 +30,6 @@ jest.mock("expo-secure-store", () => ({
   deleteItemAsync: jest.fn(),
 }));
 
-import { useAuthStore } from "../auth.store";
-import * as authApi from "@/api/auth.api";
-import { getStoredTokens, clearTokens } from "@/api/client";
-import {
-  cacheUser,
-  getCachedUser,
-  clearCachedUser,
-} from "@/database/local.repository";
-
 const mockLogin = authApi.login as jest.Mock;
 const mockLogout = authApi.logout as jest.Mock;
 const mockGetStoredTokens = getStoredTokens as jest.Mock;
@@ -42,12 +42,10 @@ const mockUser = {
   id: 1,
   username: "testuser",
   email: "test@test.com",
-  firstName: "Test",
-  lastName: "User",
-  keycloakId: "kc-id-1",
-  isActive: true,
-  createdAt: "2024-01-01",
-  updatedAt: "2024-01-01",
+  full_name: "Test User",
+  is_active: true,
+  created_at: "2024-01-01",
+  updated_at: "2024-01-01",
 };
 
 /** Resetea el store a su estado inicial entre tests. */

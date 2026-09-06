@@ -1,51 +1,46 @@
+export type FinancialObjectiveType = "loan" | "savings" | "goal";
+
 export interface FinancialObjectiveResponse {
   id: number;
-  userId: number;
+  user_id: number;
   name: string;
-  targetAmount: number;
-  currentAmount: number;
-  currency: string;
-  targetDate: string;
-  description: string | null;
-  isCompleted: boolean;
-  createdAt: string;
-  updatedAt: string;
+  type: FinancialObjectiveType;
+  target_amount: number | null;
+  current_balance: number;
+  start_date?: string | null;
+  end_date?: string | null;
+  is_completed: boolean;
+  created_at: string;
+  updated_at: string | null;
 }
 
 export interface CreateFinancialObjectiveDto {
   name: string;
-  targetAmount: number;
-  currency: string;
-  targetDate: string;
-  description?: string;
+  type: FinancialObjectiveType;
+  target_amount?: number | null;
+  current_balance?: number;
+  start_date?: string;
+  end_date?: string;
 }
 
-export interface UpdateFinancialObjectiveDto {
-  name?: string;
-  targetAmount?: number;
-  currency?: string;
-  targetDate?: string;
-  description?: string;
-}
+export type UpdateFinancialObjectiveDto = Partial<CreateFinancialObjectiveDto>;
 
 export interface FinancialPeriodResponse {
   id: number;
-  userId: number;
-  name: string;
-  startDate: string;
-  endDate: string;
-  budget: number;
-  currency: string;
-  createdAt: string;
-  updatedAt: string;
+  user_id: number;
+  year: number;
+  month: number;
+  is_closed: boolean;
+  closed_at?: string | null;
+  created_at: string;
 }
 
 export interface ObjectivePaymentResponse {
   id: number;
-  objectiveId: number;
+  objective_id: number;
+  user_id: number;
   amount: number;
-  currency: string;
-  paymentDate: string;
-  notes: string | null;
-  createdAt: string;
+  payment_date: string;
+  note?: string;
+  created_at: string;
 }

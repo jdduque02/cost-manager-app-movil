@@ -1,14 +1,22 @@
 import { create } from "zustand";
 import {
   syncPendingOperations,
+  MAX_RETRIES,
   type SyncResult,
 } from "@/database/sync.service";
 import { getPendingOperations } from "@/database/local.repository";
+
+// Sincroniza automáticamente cada ~2-3 min además del disparo al reconectar,
+// para no depender únicamente del evento offline→online (p.ej. si la app
+// nunca perdió la conexión pero el primer intento de sync falló).
+const PERIODIC_SYNC_INTERVAL_MS = 2.5 * 60 * 1000;
 
 interface OfflineState {
   isOnline: boolean;
   isSyncing: boolean;
   pendingCount: number;
+  /** Operaciones que agotaron sus reintentos (MAX_RETRIES) y ya no se reintentan automáticamente. */
+  skippedCount: number;
   lastSyncAt: string | null;
   lastSyncResult: SyncResult | null;
 
@@ -30,6 +38,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
   isOnline: true,
   isSyncing: false,
   pendingCount: 0,
+  skippedCount: 0,
   lastSyncAt: null,
   lastSyncResult: null,
 
@@ -66,9 +75,22 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
   refreshPendingCount: async () => {
     try {
       const ops = await getPendingOperations();
-      set({ pendingCount: ops.length });
+      const skipped = ops.filter((op) => op.retryCount >= MAX_RETRIES).length;
+      set({ pendingCount: ops.length, skippedCount: skipped });
     } catch {
       // ignorar
     }
   },
 }));
+
+// Timer periódico: complementa el disparo en el flanco offline→online para
+// cubrir el caso en que la app nunca perdió conexión pero un sync anterior
+// falló. No depende de AppState (evita una segunda suscripción — el refresh
+// proactivo de tokens en `api/client.ts` ya escucha foreground/background).
+setInterval(() => {
+  const { isOnline, isSyncing, pendingCount, skippedCount, sync } =
+    useOfflineStore.getState();
+  if (isOnline && !isSyncing && pendingCount > skippedCount) {
+    sync();
+  }
+}, PERIODIC_SYNC_INTERVAL_MS);

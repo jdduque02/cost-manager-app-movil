@@ -19,11 +19,5 @@ export interface KeycloakTokenResponse {
   token_type: string;
   session_state: string;
   scope: string;
-}
-
-export interface ApiResponse<T> {
-  status: boolean;
-  message: string;
-  data: T;
-  timestamp: string;
+  userId: number;
 }

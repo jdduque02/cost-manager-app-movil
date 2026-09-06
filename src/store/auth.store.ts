@@ -1,7 +1,10 @@
 import { create } from "zustand";
+import { isAxiosError } from "axios";
 import { getStoredTokens, clearTokens } from "@/api/client";
 import * as authApi from "@/api/auth.api";
+import * as usersApi from "@/api/users.api";
 import * as SecureStore from "expo-secure-store";
+import { onSessionExpired } from "@/lib/session-events";
 import {
   cacheUser,
   getCachedUser,
@@ -24,6 +27,7 @@ interface AuthState {
   login: (dto: LoginDto) => Promise<void>;
   loginOffline: () => Promise<boolean>;
   logout: () => Promise<void>;
+  handleSessionExpired: () => Promise<void>;
   setUser: (user: UserResponse) => void;
   clearError: () => void;
 }
@@ -53,11 +57,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (accessToken) {
         // Cargar usuario desde caché local si hay token
         const cachedUser = await getCachedUser();
+        if (!cachedUser) {
+          // Token presente pero sin usuario cacheado: no hay forma confiable
+          // de saber el userId real. Adivinarlo (p.ej. `?? 1`) llevaría a
+          // pedir los datos de otra persona. Tratarlo como sesión inválida.
+          await get().handleSessionExpired();
+          return;
+        }
         set({
           isAuthenticated: true,
           isOfflineMode: false,
           user: cachedUser,
-          userId: cachedUser?.id ?? null,
+          userId: cachedUser.id,
           isLoading: false,
         });
         return;
@@ -101,19 +112,55 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (dto: LoginDto) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await authApi.login(dto);
-      // Cachear el usuario si la respuesta lo incluye
-      if (response && typeof response === "object" && "id" in response) {
-        await cacheUser(response as UserResponse);
-        set({
-          user: response as UserResponse,
-          userId: (response as UserResponse).id,
-        });
+      const tokenData = await authApi.login(dto);
+
+      const userId = tokenData.userId;
+      if (userId) {
+        await SecureStore.setItemAsync(CACHED_USER_ID_KEY, String(userId));
       }
-      set({ isAuthenticated: true, isOfflineMode: false, isLoading: false });
+
+      set({
+        isAuthenticated: true,
+        isOfflineMode: false,
+        isLoading: false,
+        userId: userId ?? null,
+      });
+
+      // Cachear el usuario completo (SQLite + store) para que sobreviva a un
+      // reinicio de la app — sin esto, `initialize()` no encuentra usuario en
+      // caché al reabrir y `userId` se pierde (ver [[fase-1-userid-perdido]]).
+      if (userId) {
+        try {
+          const fullUser = await usersApi.getCurrentUser(userId);
+          get().setUser(fullUser);
+        } catch {
+          // No bloquear el login si esta llamada falla; el usuario queda sin
+          // cachear localmente pero la sesión sigue siendo válida.
+        }
+      }
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Error al iniciar sesión";
+      console.error("[Auth] login failed:", err);
+      // Sin response = fallo de red real (DNS, TLS, timeout, conexión rechazada).
+      // Con response (401, etc.) = el servidor respondió pero rechazó las credenciales.
+      const isNetworkError = isAxiosError(err) && !err.response;
+      let message: string;
+      if (isNetworkError) {
+        message =
+          "No se pudo conectar con el servidor. Verifica tu conexión e IP del backend.";
+        if (__DEV__ && isAxiosError(err)) {
+          message += ` [${err.code ?? "sin código"}: ${err.message}]`;
+        }
+      } else if (isAxiosError(err) && err.response) {
+        const serverMessage = (err.response.data as { message?: string } | undefined)
+          ?.message;
+        message =
+          serverMessage ??
+          "Credenciales incorrectas. Verifica tu usuario y contraseña.";
+      } else if (err instanceof Error) {
+        message = err.message;
+      } else {
+        message = "Credenciales incorrectas. Verifica tu usuario y contraseña.";
+      }
       set({ isLoading: false, error: message });
       throw err;
     }
@@ -158,6 +205,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
+  // Como logout(), pero sin llamar al endpoint (el servidor ya rechazó el
+  // token) y dejando un mensaje explicando por qué se salió de la sesión.
+  handleSessionExpired: async () => {
+    await clearTokens();
+    await clearCachedUser();
+    set({
+      isAuthenticated: false,
+      isOfflineMode: false,
+      user: null,
+      userId: null,
+      isLoading: false,
+      error: "Tu sesión expiró, inicia sesión de nuevo",
+    });
+  },
+
   setUser: (user: UserResponse) => {
     set({ user, userId: user.id });
     cacheUser(user).catch(() => {});
@@ -165,3 +227,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   clearError: () => set({ error: null }),
 }));
+
+onSessionExpired(() => {
+  useAuthStore.getState().handleSessionExpired();
+});

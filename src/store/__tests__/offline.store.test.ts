@@ -4,6 +4,10 @@
  * Mockea sync.service y local.repository para probar la lógica del store.
  */
 
+import { useOfflineStore } from "../offline.store";
+import { syncPendingOperations } from "@/database/sync.service";
+import { getPendingOperations } from "@/database/local.repository";
+
 jest.mock("@/database/sync.service", () => ({
   syncPendingOperations: jest.fn(),
 }));
@@ -11,10 +15,6 @@ jest.mock("@/database/sync.service", () => ({
 jest.mock("@/database/local.repository", () => ({
   getPendingOperations: jest.fn(),
 }));
-
-import { useOfflineStore } from "../offline.store";
-import { syncPendingOperations } from "@/database/sync.service";
-import { getPendingOperations } from "@/database/local.repository";
 
 const mockSync = syncPendingOperations as jest.Mock;
 const mockGetPending = getPendingOperations as jest.Mock;
