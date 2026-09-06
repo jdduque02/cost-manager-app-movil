@@ -1,86 +1,85 @@
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
-  ActivityIndicator,
-} from "react-native";
+import { View, Text, Pressable, KeyboardAvoidingView, Platform, ScrollView, Alert } from "react-native";
 import { useState } from "react";
 import { router } from "expo-router";
 import * as authApi from "@/api/auth.api";
+import { SprigLogo } from "@/components/ui/SprigLogo";
+import { Card } from "@/components/ui/Card";
+import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  async function handleSubmit() {
+  async function handleForgotPassword() {
     if (!email.trim()) {
-      Alert.alert("Campo requerido", "Ingresa tu correo electrónico");
+      Alert.alert("Campo requerido", "Ingresa tu email");
       return;
     }
-    setLoading(true);
+
     try {
-      await authApi.forgotPassword({ email: email.trim() });
-      Alert.alert(
-        "Correo enviado",
-        "Revisa tu bandeja de entrada para restablecer tu contraseña",
-        [{ text: "OK", onPress: () => router.back() }],
-      );
+      setIsLoading(true);
+      await authApi.forgotPassword({ email });
+      setSent(true);
     } catch {
-      Alert.alert("Error", "No se pudo enviar el correo. Verifica tu email.");
+      Alert.alert("Error", "No se pudo enviar el email de recuperacion");
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
+  }
+
+  if (sent) {
+    return (
+      <View className="flex-1 bg-background items-center justify-center px-6">
+        <SprigLogo variant="mark" size="lg" />
+        <Text className="text-xl font-display text-foreground mt-6 mb-2">Email enviado</Text>
+        <Text className="text-sm font-sans text-muted-foreground text-center mb-6">
+          Revisa tu bandeja de entrada y sigue las instrucciones para restablecer tu contrasena.
+        </Text>
+        <Button onPress={() => router.replace("/(auth)/login")}>Volver al login</Button>
+      </View>
+    );
   }
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-brand-50"
+      className="flex-1 bg-background"
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <View className="flex-1 px-6 pt-16">
-        <TouchableOpacity className="mb-6" onPress={() => router.back()}>
-          <Text className="text-brand-700 text-base">← Volver</Text>
-        </TouchableOpacity>
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View className="items-center mb-8">
+          <SprigLogo variant="mark" size="lg" />
+          <Text className="text-xl font-display text-foreground mt-6 mb-2">Recuperar contrasena</Text>
+          <Text className="text-sm font-sans text-muted-foreground text-center">
+            Ingresa tu email y te enviaremos las instrucciones
+          </Text>
+        </View>
 
-        <Text className="text-2xl font-bold text-brand-900 mb-2">
-          Restablecer contraseña
-        </Text>
-        <Text className="text-sm text-brand-800 mb-8 leading-5">
-          Ingresa tu email y te enviaremos un enlace para restablecer tu
-          contraseña.
-        </Text>
+        <Card>
+          <Input
+            label="Email"
+            value={email}
+            onChangeText={setEmail}
+            placeholder="tu@email.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
 
-        <Text className="text-sm font-semibold text-brand-900 mb-1.5">
-          Email
-        </Text>
-        <TextInput
-          className="border border-brand-100 rounded-xl p-3 text-brand-900 bg-white mb-5 text-base"
-          value={email}
-          onChangeText={setEmail}
-          placeholder="juan@email.com"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
+          <Button size="lg" onPress={handleForgotPassword} loading={isLoading}>
+            Enviar instrucciones
+          </Button>
 
-        <TouchableOpacity
-          className={`bg-brand-900 rounded-xl p-4 items-center${loading ? " opacity-60" : ""}`}
-          onPress={handleSubmit}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text className="text-white font-bold text-base">
-              Enviar enlace
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
+          <View className="flex-row justify-center mt-5">
+            <Pressable onPress={() => router.back()}>
+              <Text className="text-primary font-sans-bold text-sm">Volver al login</Text>
+            </Pressable>
+          </View>
+        </Card>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
