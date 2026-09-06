@@ -12,7 +12,7 @@ import * as SecureStore from "expo-secure-store";
  * para evitar que entren caracteres nulos o de control en la DB.
  */
 export function sanitizeInput(value: string): string {
-  // eslint-disable-next-line no-control-regex
+   
   const noControl = value.trim().replaceAll(/[\x00-\x1F\x7F]/g, "");
   return noControl.replaceAll(/\s+/g, " ");
 }
@@ -79,7 +79,7 @@ export function validateUsername(username: string): UsernameValidation {
 // ─── Rate limiter de login ────────────────────────────────────────────────────
 
 const RATE_LIMIT_KEY = "login_rate_limit";
-const MAX_ATTEMPTS = 5;
+const MAX_ATTEMPTS = 10;
 const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutos
 
 interface RateLimitState {

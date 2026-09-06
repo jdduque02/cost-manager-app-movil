@@ -4,6 +4,9 @@
  * Mockea el apiClient de Axios y SecureStore para aislar la lógica de la API.
  */
 
+import { login, logout, forgotPassword } from "../auth.api";
+import { apiClient, saveTokens, clearTokens } from "../client";
+
 jest.mock("../client", () => ({
   apiClient: {
     post: jest.fn(),
@@ -11,9 +14,6 @@ jest.mock("../client", () => ({
   saveTokens: jest.fn(),
   clearTokens: jest.fn(),
 }));
-
-import { login, logout, forgotPassword } from "../auth.api";
-import { apiClient, saveTokens, clearTokens } from "../client";
 
 const mockPost = apiClient.post as jest.Mock;
 const mockSaveTokens = saveTokens as jest.Mock;
@@ -36,27 +36,27 @@ beforeEach(() => {
 // ─── login ────────────────────────────────────────────────────────────────────
 
 describe("login", () => {
-  it("hace POST a /auth/login y guarda tokens", async () => {
-    mockPost.mockResolvedValueOnce({
-      data: {
-        status: true,
-        message: "OK",
-        data: [mockTokenResponse],
-        timestamp: new Date().toISOString(),
-      },
-    });
+  it("hace POST a /auth/encrypt, luego a /auth/login, y guarda tokens", async () => {
+    // apiClient.post ya viene desenvuelto del envelope (lo hace el interceptor real,
+    // que este mock del módulo "../client" reemplaza por completo).
+    mockPost
+      .mockResolvedValueOnce({ data: [{ encrypted_password: "encrypted-pass" }] })
+      .mockResolvedValueOnce({ data: [mockTokenResponse] });
 
     const result = await login({ username: "user", password: "Pass1234" });
 
-    expect(mockPost).toHaveBeenCalledWith("/auth/login", {
-      username: "user",
+    expect(mockPost).toHaveBeenNthCalledWith(1, "/auth/encrypt", {
       password: "Pass1234",
     });
-    expect(mockSaveTokens).toHaveBeenCalledWith("mock-access", "mock-refresh");
-    expect(result.data[0].access_token).toBe("mock-access");
+    expect(mockPost).toHaveBeenNthCalledWith(2, "/auth/login", {
+      username: "user",
+      password: "encrypted-pass",
+    });
+    expect(mockSaveTokens).toHaveBeenCalledWith("mock-access", "mock-refresh", 3600);
+    expect(result.access_token).toBe("mock-access");
   });
 
-  it("propaga el error si la petición falla", async () => {
+  it("propaga el error si falla la encriptación", async () => {
     mockPost.mockRejectedValueOnce(new Error("Network error"));
     await expect(
       login({ username: "user", password: "wrong" }),
