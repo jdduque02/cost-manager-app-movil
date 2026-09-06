@@ -590,18 +590,19 @@ cp .env.example .env
 | -------------- | --------------------- | ------------------------------------ |
 | `API_BASE_URL` | URL base del servidor | `https://api.costmanager.com/api/v1` |
 
-Las variables se exponen a la app mediante `app.json` → `expo.extra`:
+Las variables se exponen a la app mediante `app.config.ts` → `expo.extra`, que lee
+`process.env.API_BASE_URL` (Expo CLI carga `.env` automáticamente antes de evaluar
+este archivo, no requiere el prefijo `EXPO_PUBLIC_`):
 
-```json
-// app.json
-{
-  "expo": {
-    "extra": {
-      "API_BASE_URL": "https://api.costmanager.com/api/v1"
-    }
-  }
-}
+```typescript
+// app.config.ts
+const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:3000/api/v1";
+// ...
+extra: { API_BASE_URL, ... }
 ```
+
+> `.env` es la única fuente de verdad. Ya no existe `app.json` — no hay que copiar
+> el valor a mano en dos archivos.
 
 Y se leen en `src/api/client.ts`:
 

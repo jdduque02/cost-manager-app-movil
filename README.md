@@ -90,3 +90,6 @@ src/
 | `DELETE /users/:id/financial-objectives/:id` | Objetivos                 |
 | `GET /catalog/categories`                    | Selector categorías       |
 | `GET /user/:id/financial-profile`            | Perfil                    |
+
+
+"C:\Users\jdduq\AppData\Local\ngrok-cli\ngrok.exe" http 3000
