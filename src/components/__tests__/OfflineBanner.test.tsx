@@ -5,6 +5,12 @@
  * de conectividad y operaciones pendientes.
  */
 
+import React from "react";
+import { render, screen, fireEvent } from "@testing-library/react-native";
+import { OfflineBanner } from "../OfflineBanner";
+import { useOfflineStore } from "@/store/offline.store";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
+
 jest.mock("@/store/offline.store", () => ({
   useOfflineStore: jest.fn(),
 }));
@@ -12,12 +18,6 @@ jest.mock("@/store/offline.store", () => ({
 jest.mock("@/hooks/useNetworkStatus", () => ({
   useNetworkStatus: jest.fn(),
 }));
-
-import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react-native";
-import { OfflineBanner } from "../OfflineBanner";
-import { useOfflineStore } from "@/store/offline.store";
-import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 
 const mockUseOfflineStore = useOfflineStore as unknown as jest.Mock;
 const mockUseNetworkStatus = useNetworkStatus as jest.Mock;
