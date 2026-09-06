@@ -1,0 +1,5 @@
+allowBuilds:
+  unrs-resolver: false
+
+overrides:
+  react-native-svg: 15.15.4
