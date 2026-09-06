@@ -4,14 +4,14 @@
  * Mockea @react-native-community/netinfo para testear el hook sin red real.
  */
 
+import { renderHook, act } from "@testing-library/react-native";
+import NetInfo from "@react-native-community/netinfo";
+import { useNetworkStatus, checkConnectivity } from "../useNetworkStatus";
+
 jest.mock("@react-native-community/netinfo", () => ({
   addEventListener: jest.fn(),
   fetch: jest.fn(),
 }));
-
-import { renderHook, act } from "@testing-library/react-native";
-import NetInfo from "@react-native-community/netinfo";
-import { useNetworkStatus, checkConnectivity } from "../useNetworkStatus";
 
 const mockAddEventListener = NetInfo.addEventListener as jest.Mock;
 const mockFetch = NetInfo.fetch as jest.Mock;

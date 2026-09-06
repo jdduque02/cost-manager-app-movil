@@ -5,16 +5,6 @@
  * whitelist de entidades/operaciones, reintentos máximos, y manejo de handlers.
  */
 
-jest.mock("@/api/transactions.api");
-jest.mock("@/api/banking.api");
-jest.mock("@/api/objectives.api");
-jest.mock("../local.repository", () => ({
-  getPendingOperations: jest.fn(),
-  deletePendingOperation: jest.fn(),
-  incrementRetryCount: jest.fn(),
-  markEntitySynced: jest.fn(),
-}));
-
 import { syncPendingOperations } from "../sync.service";
 import {
   getPendingOperations,
@@ -25,6 +15,16 @@ import {
 import * as transactionsApi from "@/api/transactions.api";
 import * as bankingApi from "@/api/banking.api";
 import * as objectivesApi from "@/api/objectives.api";
+
+jest.mock("@/api/transactions.api");
+jest.mock("@/api/banking.api");
+jest.mock("@/api/objectives.api");
+jest.mock("../local.repository", () => ({
+  getPendingOperations: jest.fn(),
+  deletePendingOperation: jest.fn(),
+  incrementRetryCount: jest.fn(),
+  markEntitySynced: jest.fn(),
+}));
 
 const mockGetPending = getPendingOperations as jest.Mock;
 const mockDelete = deletePendingOperation as jest.Mock;
@@ -106,7 +106,7 @@ describe("syncPendingOperations", () => {
       },
     ]);
 
-    const result = await syncPendingOperations();
+    await syncPendingOperations();
 
     expect(mockDelete).toHaveBeenCalledWith(50);
   });

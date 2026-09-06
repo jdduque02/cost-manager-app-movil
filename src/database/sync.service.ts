@@ -8,18 +8,27 @@ import {
   markEntitySynced,
   type PendingOperation,
 } from "./local.repository";
-import type { CreateTransactionRecordDto } from "@/types/transaction.types";
-import type { CreateBankAccountDto } from "@/types/banking.types";
-import type { CreateFinancialObjectiveDto } from "@/types/objective.types";
+import type {
+  CreateTransactionRecordDto,
+  UpdateTransactionRecordDto,
+} from "@/types/transaction.types";
+import type {
+  CreateBankAccountDto,
+  UpdateBankAccountDto,
+} from "@/types/banking.types";
+import type {
+  CreateFinancialObjectiveDto,
+  UpdateFinancialObjectiveDto,
+} from "@/types/objective.types";
 
-const MAX_RETRIES = 3;
+export const MAX_RETRIES = 3;
 
 type SyncHandler = (op: PendingOperation) => Promise<{ id: number }>;
 
 const handlers: Record<string, Record<string, SyncHandler>> = {
   transactions: {
     CREATE: async (op) => {
-      const payload = op.payload as CreateTransactionRecordDto & {
+      const payload = op.payload as unknown as CreateTransactionRecordDto & {
         userId: number;
         localId: string;
       };
@@ -27,10 +36,27 @@ const handlers: Record<string, Record<string, SyncHandler>> = {
       const result = await transactionsApi.createTransaction(userId, dto);
       return { id: result.id };
     },
+    UPDATE: async (op) => {
+      const payload = op.payload as unknown as UpdateTransactionRecordDto & {
+        userId: number;
+        id: number;
+      };
+      const { userId, id, ...dto } = payload;
+      const result = await transactionsApi.updateTransaction(userId, id, dto);
+      return { id: result.id };
+    },
+    DELETE: async (op) => {
+      const { userId, id } = op.payload as unknown as {
+        userId: number;
+        id: number;
+      };
+      await transactionsApi.deleteTransaction(userId, id);
+      return { id };
+    },
   },
   bank_accounts: {
     CREATE: async (op) => {
-      const payload = op.payload as CreateBankAccountDto & {
+      const payload = op.payload as unknown as CreateBankAccountDto & {
         userId: number;
         localId: string;
       };
@@ -38,16 +64,50 @@ const handlers: Record<string, Record<string, SyncHandler>> = {
       const result = await bankingApi.createBankAccount(userId, dto);
       return { id: result.id };
     },
+    UPDATE: async (op) => {
+      const payload = op.payload as unknown as UpdateBankAccountDto & {
+        userId: number;
+        id: number;
+      };
+      const { userId, id, ...dto } = payload;
+      const result = await bankingApi.updateBankAccount(userId, id, dto);
+      return { id: result.id };
+    },
+    DELETE: async (op) => {
+      const { userId, id } = op.payload as unknown as {
+        userId: number;
+        id: number;
+      };
+      await bankingApi.deleteBankAccount(userId, id);
+      return { id };
+    },
   },
   financial_objectives: {
     CREATE: async (op) => {
-      const payload = op.payload as CreateFinancialObjectiveDto & {
+      const payload = op.payload as unknown as CreateFinancialObjectiveDto & {
         userId: number;
         localId: string;
       };
       const { userId, localId: _localId, ...dto } = payload;
       const result = await objectivesApi.createObjective(userId, dto);
       return { id: result.id };
+    },
+    UPDATE: async (op) => {
+      const payload = op.payload as unknown as UpdateFinancialObjectiveDto & {
+        userId: number;
+        id: number;
+      };
+      const { userId, id, ...dto } = payload;
+      const result = await objectivesApi.updateObjective(userId, id, dto);
+      return { id: result.id };
+    },
+    DELETE: async (op) => {
+      const { userId, id } = op.payload as unknown as {
+        userId: number;
+        id: number;
+      };
+      await objectivesApi.deleteObjective(userId, id);
+      return { id };
     },
   },
 };

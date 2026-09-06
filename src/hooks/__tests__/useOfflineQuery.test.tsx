@@ -5,15 +5,15 @@
  * cuando no hay conexión o la petición remota falla.
  */
 
-jest.mock("@/store/offline.store", () => ({
-  useOfflineStore: jest.fn(),
-}));
-
 import { renderHook, waitFor } from "@testing-library/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { useOfflineQuery } from "../useOfflineQuery";
 import { useOfflineStore } from "@/store/offline.store";
+
+jest.mock("@/store/offline.store", () => ({
+  useOfflineStore: jest.fn(),
+}));
 
 const mockUseOfflineStore = useOfflineStore as unknown as jest.Mock;
 

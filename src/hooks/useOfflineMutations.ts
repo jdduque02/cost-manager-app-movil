@@ -7,14 +7,17 @@ import * as objectivesApi from "@/api/objectives.api";
 import * as localRepo from "@/database/local.repository";
 import type {
   CreateTransactionRecordDto,
+  UpdateTransactionRecordDto,
   TransactionRecordResponse,
 } from "@/types/transaction.types";
 import type {
   CreateBankAccountDto,
+  UpdateBankAccountDto,
   BankAccountResponse,
 } from "@/types/banking.types";
 import type {
   CreateFinancialObjectiveDto,
+  UpdateFinancialObjectiveDto,
   FinancialObjectiveResponse,
 } from "@/types/objective.types";
 import { useQueryClient } from "@tanstack/react-query";
@@ -103,5 +106,132 @@ export function useOfflineMutations() {
     [isOnline, userId, queryClient, refreshPendingCount],
   );
 
-  return { createTransaction, createBankAccount, createObjective };
+  const updateTransaction = useCallback(
+    async (
+      id: number,
+      dto: UpdateTransactionRecordDto,
+    ): Promise<void> => {
+      if (isOnline) {
+        try {
+          const result = await transactionsApi.updateTransaction(userId, id, dto);
+          await localRepo.saveTransactions([result]);
+          queryClient.invalidateQueries({ queryKey: ["transactions", userId] });
+          return;
+        } catch {
+          // Caer a offline si falla
+        }
+      }
+      await localRepo.updateLocalTransaction(userId, id, dto);
+      await refreshPendingCount();
+      queryClient.invalidateQueries({ queryKey: ["transactions", userId] });
+    },
+    [isOnline, userId, queryClient, refreshPendingCount],
+  );
+
+  const deleteTransaction = useCallback(
+    async (id: number): Promise<void> => {
+      if (isOnline) {
+        try {
+          await transactionsApi.deleteTransaction(userId, id);
+          await localRepo.removeCachedTransaction(id);
+          queryClient.invalidateQueries({ queryKey: ["transactions", userId] });
+          return;
+        } catch {
+          // Caer a offline si falla
+        }
+      }
+      await localRepo.deleteLocalTransaction(userId, id);
+      await refreshPendingCount();
+      queryClient.invalidateQueries({ queryKey: ["transactions", userId] });
+    },
+    [isOnline, userId, queryClient, refreshPendingCount],
+  );
+
+  const updateBankAccount = useCallback(
+    async (id: number, dto: UpdateBankAccountDto): Promise<void> => {
+      if (isOnline) {
+        try {
+          const result = await bankingApi.updateBankAccount(userId, id, dto);
+          await localRepo.saveBankAccounts([result]);
+          queryClient.invalidateQueries({ queryKey: ["bank-accounts", userId] });
+          return;
+        } catch {
+          // Caer a offline si falla
+        }
+      }
+      await localRepo.updateLocalBankAccount(userId, id, dto);
+      await refreshPendingCount();
+      queryClient.invalidateQueries({ queryKey: ["bank-accounts", userId] });
+    },
+    [isOnline, userId, queryClient, refreshPendingCount],
+  );
+
+  const deleteBankAccount = useCallback(
+    async (id: number): Promise<void> => {
+      if (isOnline) {
+        try {
+          await bankingApi.deleteBankAccount(userId, id);
+          await localRepo.removeCachedBankAccount(id);
+          queryClient.invalidateQueries({ queryKey: ["bank-accounts", userId] });
+          return;
+        } catch {
+          // Caer a offline si falla
+        }
+      }
+      await localRepo.deleteLocalBankAccount(userId, id);
+      await refreshPendingCount();
+      queryClient.invalidateQueries({ queryKey: ["bank-accounts", userId] });
+    },
+    [isOnline, userId, queryClient, refreshPendingCount],
+  );
+
+  const updateObjective = useCallback(
+    async (id: number, dto: UpdateFinancialObjectiveDto): Promise<void> => {
+      if (isOnline) {
+        try {
+          const result = await objectivesApi.updateObjective(userId, id, dto);
+          await localRepo.saveObjectives([result]);
+          queryClient.invalidateQueries({ queryKey: ["objectives", userId] });
+          return;
+        } catch {
+          // Caer a offline si falla
+        }
+      }
+      await localRepo.updateLocalObjective(userId, id, dto);
+      await refreshPendingCount();
+      queryClient.invalidateQueries({ queryKey: ["objectives", userId] });
+    },
+    [isOnline, userId, queryClient, refreshPendingCount],
+  );
+
+  const deleteObjective = useCallback(
+    async (id: number): Promise<void> => {
+      if (isOnline) {
+        try {
+          await objectivesApi.deleteObjective(userId, id);
+          await localRepo.removeCachedObjective(id);
+          queryClient.invalidateQueries({ queryKey: ["objectives", userId] });
+          return;
+        } catch {
+          // Caer a offline si falla
+        }
+      }
+      await localRepo.deleteLocalObjective(userId, id);
+      await refreshPendingCount();
+      queryClient.invalidateQueries({ queryKey: ["objectives", userId] });
+    },
+    [isOnline, userId, queryClient, refreshPendingCount],
+  );
+
+  return {
+    createTransaction,
+    updateTransaction,
+    deleteTransaction,
+    createBankAccount,
+    updateBankAccount,
+    deleteBankAccount,
+    createObjective,
+    updateObjective,
+    deleteObjective,
+  };
 }
