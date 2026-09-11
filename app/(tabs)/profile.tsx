@@ -28,6 +28,7 @@ import {
   ChevronRight,
   type LucideIcon,
 } from "@/components/ui/icons";
+import { toast } from "@/utils/toast";
 
 type ThemeOption = "light" | "dark" | "system";
 
@@ -62,10 +63,12 @@ export default function ProfileScreen() {
   async function handleSync() {
     const result = await sync();
     if (result) {
-      Alert.alert(
-        "Sincronización completa",
-        `${result.synced} sincronizados\n${result.failed} fallidos\n${result.skipped} omitidos`,
-      );
+      const summary = `${result.synced} sincronizados, ${result.failed} fallidos, ${result.skipped} omitidos`;
+      if (result.failed > 0) {
+        toast.warning("Sincronización con errores", summary);
+      } else {
+        toast.success("Sincronización completa", summary);
+      }
     }
   }
 

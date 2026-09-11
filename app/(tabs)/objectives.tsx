@@ -31,6 +31,7 @@ import { Money } from "@/components/ui/Money";
 import { Chip } from "@/components/ui/Chip";
 import { StaleDataBanner } from "@/components/StaleDataBanner";
 import { Target, Plus } from "@/components/ui/icons";
+import { toast } from "@/utils/toast";
 import { formatCurrency } from "@/utils/format";
 import type {
   CreateFinancialObjectiveDto,
@@ -126,9 +127,10 @@ export default function ObjectivesScreen() {
           .toISOString()
           .split("T")[0],
       });
+      toast.success("Objetivo creado");
     },
     onError: (err: unknown) => {
-      Alert.alert("Error", err instanceof Error ? err.message : "Error al crear objetivo");
+      toast.error("Error al crear objetivo", err instanceof Error ? err.message : undefined);
     },
   });
 
@@ -137,15 +139,18 @@ export default function ObjectivesScreen() {
       if (!isOnline) return Promise.reject(new Error("Sin conexión"));
       return deleteOffline(id);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["objectives", userId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["objectives", userId] });
+      toast.success("Objetivo eliminado");
+    },
     onError: (err: unknown) => {
-      Alert.alert("Error", err instanceof Error ? err.message : "Error al eliminar");
+      toast.error("Error al eliminar", err instanceof Error ? err.message : undefined);
     },
   });
 
   function handleCreate() {
     if (!form.name.trim() || !form.target_amount || !form.end_date) {
-      Alert.alert("Campos requeridos", "Nombre, monto y fecha son obligatorios");
+      toast.error("Campos requeridos", "Nombre, monto y fecha son obligatorios");
       return;
     }
     createMutation.mutate(form);

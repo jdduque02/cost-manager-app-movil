@@ -31,6 +31,7 @@ import { Money } from "@/components/ui/Money";
 import { Chip } from "@/components/ui/Chip";
 import { StaleDataBanner } from "@/components/StaleDataBanner";
 import { Wallet, CreditCard, Banknote, Plus } from "@/components/ui/icons";
+import { toast } from "@/utils/toast";
 import type {
   CreateBankAccountDto,
   AccountType,
@@ -168,9 +169,10 @@ export default function BankingScreen() {
         balance: 0,
         currency: "COP",
       });
+      toast.success("Cuenta creada");
     },
     onError: (err: unknown) => {
-      Alert.alert("Error", err instanceof Error ? err.message : "Error al crear cuenta");
+      toast.error("Error al crear cuenta", err instanceof Error ? err.message : undefined);
     },
   });
 
@@ -178,12 +180,13 @@ export default function BankingScreen() {
     mutationFn: (id: number) => deleteOffline(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bank-accounts", userId] });
+      toast.success("Cuenta eliminada");
     },
   });
 
   function handleCreateAccount() {
     if (!form.bank_name.trim() || !form.account_number.trim()) {
-      Alert.alert("Campos requeridos", "Banco y número de cuenta son obligatorios");
+      toast.error("Campos requeridos", "Banco y número de cuenta son obligatorios");
       return;
     }
     createMutation.mutate(form);
@@ -191,7 +194,7 @@ export default function BankingScreen() {
 
   function confirmDeleteAccount(id: number, name: string) {
     if (!isOnline) {
-      Alert.alert("Sin conexión", "No puedes eliminar registros en modo offline");
+      toast.warning("Sin conexión", "No puedes eliminar registros en modo offline");
       return;
     }
     Alert.alert("Eliminar cuenta", `¿Eliminar "${name}"?`, [
