@@ -1,4 +1,5 @@
 import { apiClient, unwrapList } from "./client";
+import * as localRepo from "@/database/local.repository";
 import type {
   EmpresaResponse,
   CreateEmpresaDto,
@@ -13,7 +14,9 @@ export async function getEmpresas(userId: number): Promise<EmpresaResponse[]> {
   const { data } = await apiClient.get<
     EmpresaResponse[] | { data: EmpresaResponse[]; total?: number }
   >(`/users/${userId}/empresas`);
-  return unwrapList(data);
+  const empresas = unwrapList(data);
+  await localRepo.saveCompanies(empresas).catch(() => {});
+  return empresas;
 }
 
 export async function createEmpresa(
@@ -24,7 +27,9 @@ export async function createEmpresa(
     `/users/${userId}/empresas`,
     dto,
   );
-  return one(data);
+  const empresa = one(data);
+  await localRepo.saveCompanies([empresa]).catch(() => {});
+  return empresa;
 }
 
 export async function updateEmpresa(

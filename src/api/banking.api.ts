@@ -1,4 +1,5 @@
 import { apiClient, unwrapList } from "./client";
+import * as localRepo from "@/database/local.repository";
 import type {
   BankAccountResponse,
   CreateBankAccountDto,
@@ -18,7 +19,9 @@ export async function getBankAccounts(
   const { data } = await apiClient.get<
     BankAccountResponse[] | { data: BankAccountResponse[]; total?: number }
   >(`/users/${userId}/bank-accounts`);
-  return unwrapList(data);
+  const accounts = unwrapList(data);
+  await localRepo.saveBankAccounts(accounts).catch(() => {});
+  return accounts;
 }
 
 export async function getBankAccount(
@@ -66,11 +69,13 @@ export async function getFinancialAssets(
   const { data } = await apiClient.get<
     FinancialAssetResponse[] | { data: FinancialAssetResponse[]; total?: number }
   >(`/users/${userId}/financial-assets`);
-  return unwrapList(data).map((a) => ({
+  const assets = unwrapList(data).map((a) => ({
     ...a,
     current_value: Number(a.current_value ?? 0),
     current_yield: a.current_yield != null ? Number(a.current_yield) : null,
   }));
+  await localRepo.saveFinancialAssets(assets).catch(() => {});
+  return assets;
 }
 
 // --- Financial Liabilities ---
@@ -80,8 +85,10 @@ export async function getFinancialLiabilities(
   const { data } = await apiClient.get<
     FinancialLiabilityResponse[] | { data: FinancialLiabilityResponse[]; total?: number }
   >(`/users/${userId}/financial-liabilities`);
-  return unwrapList(data).map((l) => ({
+  const liabilities = unwrapList(data).map((l) => ({
     ...l,
     current_balance: Number(l.current_balance ?? 0),
   }));
+  await localRepo.saveFinancialLiabilities(liabilities).catch(() => {});
+  return liabilities;
 }

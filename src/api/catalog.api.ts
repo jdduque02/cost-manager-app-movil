@@ -1,4 +1,5 @@
 import { apiClient, unwrapList } from "./client";
+import * as localRepo from "@/database/local.repository";
 import type {
   CategoryResponse,
   SubcategoryResponse,
@@ -16,7 +17,14 @@ export async function getCategories(): Promise<CategoryResponse[]> {
   const { data } = await apiClient.get<
     CategoryResponse[] | { data: CategoryResponse[]; total?: number }
   >("/catalog/categories");
-  return unwrapList(data);
+  const categories = unwrapList(data);
+  // Cachear localmente: la tabla `categories` es la referencia FK que usa
+  // `transactions` en SQLite (PRAGMA foreign_keys = ON) — si queda vacía,
+  // cualquier fallback offline al crear una transacción revienta por
+  // violación de foreign key, aunque la app esté online la mayor parte del
+  // tiempo (ver createLocalTransaction en local.repository.ts).
+  await localRepo.saveCategories(categories).catch(() => {});
+  return categories;
 }
 
 export async function createCategory(
@@ -25,7 +33,9 @@ export async function createCategory(
   const { data } = await apiClient.post<
     CategoryResponse | CategoryResponse[]
   >("/catalog/categories", dto);
-  return one(data);
+  const category = one(data);
+  await localRepo.saveCategories([category]).catch(() => {});
+  return category;
 }
 
 export async function updateCategory(
@@ -50,7 +60,9 @@ export async function getSubcategories(
   const { data } = await apiClient.get<
     SubcategoryResponse[] | { data: SubcategoryResponse[]; total?: number }
   >(`/users/${userId}/catalog/subcategories${qs}`);
-  return unwrapList(data);
+  const subcategories = unwrapList(data);
+  await localRepo.saveSubcategories(subcategories).catch(() => {});
+  return subcategories;
 }
 
 export async function createSubcategory(
@@ -60,7 +72,9 @@ export async function createSubcategory(
   const { data } = await apiClient.post<
     SubcategoryResponse | SubcategoryResponse[]
   >(`/users/${userId}/catalog/subcategories`, dto);
-  return one(data);
+  const subcategory = one(data);
+  await localRepo.saveSubcategories([subcategory]).catch(() => {});
+  return subcategory;
 }
 
 export async function updateSubcategory(

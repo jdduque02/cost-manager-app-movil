@@ -5,6 +5,7 @@ import type {
   UpdateTransactionRecordDto,
   TransactionQueryDto,
   PaginatedTransactions,
+  CloneTransactionDto,
 } from "@/types/transaction.types";
 
 function normalizeTransaction(
@@ -60,4 +61,20 @@ export async function deleteTransaction(
   id: number,
 ): Promise<void> {
   await apiClient.delete(`/users/${userId}/transactions/${id}`);
+}
+
+/**
+ * Duplica una transacción existente en el servidor. Requiere conexión: solo
+ * tiene sentido sobre una transacción que ya existe con id de servidor (no
+ * aplica a transacciones creadas offline que todavía no sincronizan).
+ */
+export async function cloneTransaction(
+  userId: number,
+  id: number,
+  dto: CloneTransactionDto = {},
+): Promise<TransactionRecordResponse> {
+  const { data } = await apiClient.post<
+    TransactionRecordResponse | TransactionRecordResponse[]
+  >(`/users/${userId}/transactions/${id}/clone`, dto);
+  return normalizeTransaction(Array.isArray(data) ? data[0] : data);
 }
