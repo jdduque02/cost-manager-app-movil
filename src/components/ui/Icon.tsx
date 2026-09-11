@@ -16,19 +16,6 @@ interface IconProps {
   strokeWidth?: number;
 }
 
-function SvgPath({ d, color, sw }: { d: string; color: string; sw: number }) {
-  return (
-    <View
-      style={{
-        width: 0,
-        height: 0,
-      }}
-    >
-      {/* SVG path rendered via native Image or Text fallback */}
-    </View>
-  );
-}
-
 const ICON_CHARS: Record<string, string> = {
   lock: "\uD83D\uDD12",
   monitor: "\uD83D\uDCBB",
@@ -97,7 +84,6 @@ const ICON_CHARS: Record<string, string> = {
 
 export function Icon({ name, size = "md", color = "#1A1A1A" }: IconProps) {
   const px = SIZE_MAP[size];
-  const char = ICON_CHARS[name] || "\u25CF";
 
   return (
     <View

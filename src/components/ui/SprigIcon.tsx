@@ -1,4 +1,4 @@
-import { Image, type ImageSourcePropType, type StyleProp, type ImageStyle } from "react-native";
+import { Image, type StyleProp, type ImageStyle } from "react-native";
 
 const SPRIG_ICONS = {
   appIcon: require("../../../assets/sprig/sprig_app_icon.png"),
