@@ -30,11 +30,15 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (!dbPromise) {
     dbPromise = (async () => {
       const SQLiteModule = await loadSQLite();
-      // v2: esquema alineado a snake_case + campos reales del backend.
-      // Nombre de archivo nuevo para forzar una base limpia (evita choques con
-      // instalaciones existentes que tengan el esquema v1 camelCase).
+      // Se mantiene el mismo archivo que v2 (a diferencia de la migración
+      // v1→v2, que sí forzó una base limpia): un usuario puede tener
+      // transacciones offline sin sincronizar en `pending_operations` en este
+      // archivo, y renombrarlo las perdería silenciosamente. Las columnas
+      // nuevas de transacción fija/cuotas/asociaciones se agregan vía
+      // `migrateTransactionsTable` (ALTER TABLE) en vez de recrear la base.
       const instance = await SQLiteModule.openDatabaseAsync("cost_manager_v2.db");
       await initSchema(instance);
+      await migrateTransactionsTable(instance);
       db = instance;
       return instance;
     })();
@@ -101,6 +105,14 @@ async function initSchema(database: SQLite.SQLiteDatabase): Promise<void> {
     );
 
     -- Transacciones
+    -- Nota: las columnas de transacción fija/cuotas/método de pago/asociaciones
+    -- (payment_method, fixed_type, frequency, due_day, reminder_days,
+    -- installments, installment_value, source_bank, source_account,
+    -- asset_id, liability_id, objective_id, company_id) NO están acá — este
+    -- CREATE TABLE solo corre en instalaciones nuevas sin la tabla todavía.
+    -- Para instalaciones existentes (archivo v2 ya creado), esas columnas se
+    -- agregan vía ALTER TABLE en migrateTransactionsTable, más abajo, para
+    -- no perder transacciones/pending_operations sin sincronizar.
     CREATE TABLE IF NOT EXISTS transactions (
       id INTEGER PRIMARY KEY,
       local_id TEXT UNIQUE,
@@ -118,6 +130,44 @@ async function initSchema(database: SQLite.SQLiteDatabase): Promise<void> {
       updated_at TEXT,
       is_pending_sync INTEGER DEFAULT 0,
       FOREIGN KEY (category_id) REFERENCES categories(id)
+    );
+
+    -- Empresas asociables a una transacción (creación inline "al vuelo")
+    CREATE TABLE IF NOT EXISTS companies (
+      id INTEGER PRIMARY KEY,
+      local_id TEXT UNIQUE,
+      user_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      default_category_id INTEGER,
+      created_at TEXT,
+      updated_at TEXT,
+      is_pending_sync INTEGER DEFAULT 0
+    );
+
+    -- Activos financieros (solo lectura offline — sin creación inline todavía)
+    CREATE TABLE IF NOT EXISTS financial_assets (
+      id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      asset_type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      current_value REAL NOT NULL DEFAULT 0,
+      current_yield REAL,
+      currency TEXT NOT NULL DEFAULT 'COP',
+      created_at TEXT,
+      updated_at TEXT
+    );
+
+    -- Pasivos financieros (solo lectura offline — sin creación inline todavía)
+    CREATE TABLE IF NOT EXISTS financial_liabilities (
+      id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      liability_type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      current_balance REAL NOT NULL DEFAULT 0,
+      interest_rate REAL,
+      currency TEXT NOT NULL DEFAULT 'COP',
+      created_at TEXT,
+      updated_at TEXT
     );
 
     -- Objetivos financieros
@@ -162,6 +212,44 @@ async function initSchema(database: SQLite.SQLiteDatabase): Promise<void> {
       retry_count INTEGER DEFAULT 0
     );
   `);
+}
+
+/**
+ * Agrega a `transactions` las columnas de transacción fija/cuotas/método de
+ * pago/asociaciones patrimoniales que no existían en el esquema original v2.
+ * Idempotente: en instalaciones nuevas el CREATE TABLE de `initSchema` ya
+ * crea la tabla con todas las columnas, así que `PRAGMA table_info` las
+ * encuentra todas y no hace ningún ALTER. En instalaciones existentes agrega
+ * solo las columnas que faltan, preservando filas y `pending_operations` en
+ * vez de recrear el archivo de base de datos.
+ */
+async function migrateTransactionsTable(database: SQLite.SQLiteDatabase): Promise<void> {
+  const existingColumns = await database.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(transactions)",
+  );
+  const existing = new Set(existingColumns.map((c) => c.name));
+  const newColumns: [string, string][] = [
+    ["asset_id", "INTEGER"],
+    ["liability_id", "INTEGER"],
+    ["objective_id", "INTEGER"],
+    ["company_id", "INTEGER"],
+    ["payment_method", "TEXT"],
+    ["fixed_type", "TEXT"],
+    ["frequency", "TEXT"],
+    ["due_day", "INTEGER"],
+    ["reminder_days", "INTEGER"],
+    ["installments", "INTEGER"],
+    ["installment_value", "REAL"],
+    ["source_bank", "TEXT"],
+    ["source_account", "TEXT"],
+  ];
+  for (const [name, type] of newColumns) {
+    if (!existing.has(name)) {
+      // Nombres/tipos vienen de la lista fija de arriba (no de input externo),
+      // así que interpolarlos en el DDL no abre una inyección SQL.
+      await database.execAsync(`ALTER TABLE transactions ADD COLUMN ${name} ${type}`);
+    }
+  }
 }
 
 export async function closeDatabase(): Promise<void> {

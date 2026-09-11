@@ -4,6 +4,7 @@ import { useAuthStore } from "@/store/auth.store";
 import * as transactionsApi from "@/api/transactions.api";
 import * as bankingApi from "@/api/banking.api";
 import * as objectivesApi from "@/api/objectives.api";
+import * as empresasApi from "@/api/empresas.api";
 import * as localRepo from "@/database/local.repository";
 import type {
   CreateTransactionRecordDto,
@@ -20,6 +21,7 @@ import type {
   UpdateFinancialObjectiveDto,
   FinancialObjectiveResponse,
 } from "@/types/objective.types";
+import type { CreateEmpresaDto, EmpresaResponse } from "@/types/empresa.types";
 import { useQueryClient } from "@tanstack/react-query";
 
 /**
@@ -101,6 +103,26 @@ export function useOfflineMutations() {
       const result = await localRepo.createLocalObjective(userId, dto);
       await refreshPendingCount();
       queryClient.invalidateQueries({ queryKey: ["objectives", userId] });
+      return result;
+    },
+    [isOnline, userId, queryClient, refreshPendingCount],
+  );
+
+  const createCompany = useCallback(
+    async (dto: CreateEmpresaDto): Promise<EmpresaResponse> => {
+      if (isOnline) {
+        try {
+          const result = await empresasApi.createEmpresa(userId, dto);
+          await localRepo.saveCompanies([result]);
+          queryClient.invalidateQueries({ queryKey: ["companies", userId] });
+          return result;
+        } catch {
+          // Caer a offline si falla
+        }
+      }
+      const result = await localRepo.createLocalCompany(userId, dto);
+      await refreshPendingCount();
+      queryClient.invalidateQueries({ queryKey: ["companies", userId] });
       return result;
     },
     [isOnline, userId, queryClient, refreshPendingCount],
@@ -233,5 +255,6 @@ export function useOfflineMutations() {
     createObjective,
     updateObjective,
     deleteObjective,
+    createCompany,
   };
 }

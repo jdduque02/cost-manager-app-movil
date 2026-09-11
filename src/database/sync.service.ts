@@ -1,6 +1,7 @@
 import * as transactionsApi from "@/api/transactions.api";
 import * as bankingApi from "@/api/banking.api";
 import * as objectivesApi from "@/api/objectives.api";
+import * as empresasApi from "@/api/empresas.api";
 import {
   getPendingOperations,
   deletePendingOperation,
@@ -20,6 +21,7 @@ import type {
   CreateFinancialObjectiveDto,
   UpdateFinancialObjectiveDto,
 } from "@/types/objective.types";
+import type { CreateEmpresaDto } from "@/types/empresa.types";
 
 export const MAX_RETRIES = 3;
 
@@ -110,6 +112,20 @@ const handlers: Record<string, Record<string, SyncHandler>> = {
       return { id };
     },
   },
+  companies: {
+    CREATE: async (op) => {
+      const payload = op.payload as unknown as CreateEmpresaDto & {
+        userId: number;
+        localId: string;
+      };
+      const { userId, localId: _localId, ...dto } = payload;
+      const result = await empresasApi.createEmpresa(userId, dto);
+      return { id: result.id };
+    },
+    // Editar/borrar empresas desde móvil no está soportado todavía — si no
+    // hay handler para la operación, syncPendingOperations descarta el
+    // registro pendiente en vez de reintentarlo indefinidamente.
+  },
 };
 
 /** Entidades permitidas en sincronización (whitelist para evitar procesar entidades arbitrarias). */
@@ -117,6 +133,7 @@ const ALLOWED_ENTITIES = new Set([
   "transactions",
   "bank_accounts",
   "financial_objectives",
+  "companies",
 ]);
 
 /** Operaciones permitidas. */

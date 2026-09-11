@@ -14,6 +14,8 @@ import type {
   BankAccountResponse,
   CreateBankAccountDto,
   UpdateBankAccountDto,
+  FinancialAssetResponse,
+  FinancialLiabilityResponse,
 } from "@/types/banking.types";
 import type {
   FinancialObjectiveResponse,
@@ -24,6 +26,10 @@ import type {
   CategoryResponse,
   SubcategoryResponse,
 } from "@/types/catalog.types";
+import type {
+  EmpresaResponse,
+  CreateEmpresaDto,
+} from "@/types/empresa.types";
 
 // ─── Utilidad ───────────────────────────────────────────────────────────────
 
@@ -357,8 +363,10 @@ export async function saveTransactions(
   for (const t of transactions) {
     await db.runAsync(
       `INSERT OR REPLACE INTO transactions
-        (id, local_id, user_id, category_id, subcategory_id, account_id, type, amount, currency, is_fixed, description, transaction_date, created_at, updated_at, is_pending_sync)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+        (id, local_id, user_id, category_id, subcategory_id, account_id, asset_id, liability_id, objective_id, company_id,
+         type, amount, currency, payment_method, is_fixed, fixed_type, frequency, due_day, reminder_days,
+         installments, installment_value, source_bank, source_account, description, transaction_date, created_at, updated_at, is_pending_sync)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [
         nz(t.id),
         String(t.id),
@@ -366,10 +374,23 @@ export async function saveTransactions(
         nz(t.category_id),
         nz(t.subcategory_id),
         nz(t.account_id),
+        nz(t.asset_id),
+        nz(t.liability_id),
+        nz(t.objective_id),
+        nz(t.company_id),
         nz(t.type),
         nz(t.amount) ?? 0,
         nz(t.currency),
+        nz(t.payment_method),
         t.is_fixed ? 1 : 0,
+        nz(t.fixed_type),
+        nz(t.frequency),
+        nz(t.due_day),
+        nz(t.reminder_days),
+        nz(t.installments),
+        nz(t.installment_value),
+        nz(t.source_bank),
+        nz(t.source_account),
         nz(t.description),
         nz(t.transaction_date),
         nz(t.created_at),
@@ -390,10 +411,23 @@ export async function getLocalTransactions(
     category_id: number | null;
     subcategory_id: number | null;
     account_id: number | null;
+    asset_id: number | null;
+    liability_id: number | null;
+    objective_id: number | null;
+    company_id: number | null;
     type: string;
     amount: number;
     currency: string;
+    payment_method: string | null;
     is_fixed: number;
+    fixed_type: string | null;
+    frequency: string | null;
+    due_day: number | null;
+    reminder_days: number | null;
+    installments: number | null;
+    installment_value: number | null;
+    source_bank: string | null;
+    source_account: string | null;
     description: string | null;
     transaction_date: string;
     created_at: string;
@@ -408,10 +442,23 @@ export async function getLocalTransactions(
     category_id: r.category_id,
     subcategory_id: r.subcategory_id,
     account_id: r.account_id,
+    asset_id: r.asset_id,
+    liability_id: r.liability_id,
+    objective_id: r.objective_id,
+    company_id: r.company_id,
     type: r.type as TransactionRecordResponse["type"],
     amount: r.amount,
     currency: r.currency,
+    payment_method: r.payment_method as TransactionRecordResponse["payment_method"],
     is_fixed: r.is_fixed === 1,
+    fixed_type: r.fixed_type as TransactionRecordResponse["fixed_type"],
+    frequency: r.frequency as TransactionRecordResponse["frequency"],
+    due_day: r.due_day,
+    reminder_days: r.reminder_days,
+    installments: r.installments,
+    installment_value: r.installment_value,
+    source_bank: r.source_bank,
+    source_account: r.source_account,
     description: r.description,
     transaction_date: r.transaction_date,
     created_at: r.created_at,
@@ -428,17 +475,33 @@ export async function createLocalTransaction(
   const timestamp = now();
   await db.runAsync(
     `INSERT INTO transactions
-      (local_id, user_id, category_id, subcategory_id, account_id, type, amount, currency, is_fixed, description, transaction_date, created_at, updated_at, is_pending_sync)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 1)`,
+      (local_id, user_id, category_id, subcategory_id, account_id, asset_id, liability_id, objective_id, company_id,
+       type, amount, currency, payment_method, is_fixed, fixed_type, frequency, due_day, reminder_days,
+       installments, installment_value, source_bank, source_account, description, transaction_date, created_at, updated_at, is_pending_sync)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
     [
       localId,
       userId,
       dto.category_id ?? null,
       dto.subcategory_id ?? null,
       dto.account_id ?? null,
+      dto.asset_id ?? null,
+      dto.liability_id ?? null,
+      dto.objective_id ?? null,
+      dto.company_id ?? null,
       dto.type,
       dto.amount,
       dto.currency ?? "COP",
+      dto.payment_method ?? null,
+      dto.is_fixed ? 1 : 0,
+      dto.fixed_type ?? null,
+      dto.frequency ?? null,
+      dto.due_day ?? null,
+      dto.reminder_days ?? null,
+      dto.installments ?? null,
+      dto.installment_value ?? null,
+      dto.source_bank ?? null,
+      dto.source_account ?? null,
       dto.description ?? null,
       dto.transaction_date ?? timestamp,
       timestamp,
@@ -460,10 +523,23 @@ export async function createLocalTransaction(
     category_id: dto.category_id ?? null,
     subcategory_id: dto.subcategory_id ?? null,
     account_id: dto.account_id ?? null,
+    asset_id: dto.asset_id ?? null,
+    liability_id: dto.liability_id ?? null,
+    objective_id: dto.objective_id ?? null,
+    company_id: dto.company_id ?? null,
     type: dto.type,
     amount: dto.amount,
     currency: dto.currency ?? "COP",
-    is_fixed: false,
+    payment_method: dto.payment_method ?? null,
+    is_fixed: Boolean(dto.is_fixed),
+    fixed_type: dto.fixed_type ?? null,
+    frequency: dto.frequency ?? null,
+    due_day: dto.due_day ?? null,
+    reminder_days: dto.reminder_days ?? null,
+    installments: dto.installments ?? null,
+    installment_value: dto.installment_value ?? null,
+    source_bank: dto.source_bank ?? null,
+    source_account: dto.source_account ?? null,
     description: dto.description ?? null,
     transaction_date: dto.transaction_date ?? timestamp,
     created_at: timestamp,
@@ -489,9 +565,23 @@ export async function updateLocalTransaction(
       category_id = COALESCE(?, category_id),
       subcategory_id = COALESCE(?, subcategory_id),
       account_id = COALESCE(?, account_id),
+      asset_id = COALESCE(?, asset_id),
+      liability_id = COALESCE(?, liability_id),
+      objective_id = COALESCE(?, objective_id),
+      company_id = COALESCE(?, company_id),
       type = COALESCE(?, type),
       amount = COALESCE(?, amount),
       currency = COALESCE(?, currency),
+      payment_method = COALESCE(?, payment_method),
+      is_fixed = COALESCE(?, is_fixed),
+      fixed_type = COALESCE(?, fixed_type),
+      frequency = COALESCE(?, frequency),
+      due_day = COALESCE(?, due_day),
+      reminder_days = COALESCE(?, reminder_days),
+      installments = COALESCE(?, installments),
+      installment_value = COALESCE(?, installment_value),
+      source_bank = COALESCE(?, source_bank),
+      source_account = COALESCE(?, source_account),
       description = COALESCE(?, description),
       transaction_date = COALESCE(?, transaction_date),
       updated_at = ?
@@ -500,9 +590,23 @@ export async function updateLocalTransaction(
       nz(dto.category_id),
       nz(dto.subcategory_id),
       nz(dto.account_id),
+      nz(dto.asset_id),
+      nz(dto.liability_id),
+      nz(dto.objective_id),
+      nz(dto.company_id),
       nz(dto.type),
       nz(dto.amount),
       nz(dto.currency),
+      nz(dto.payment_method),
+      dto.is_fixed === undefined ? null : dto.is_fixed ? 1 : 0,
+      nz(dto.fixed_type),
+      nz(dto.frequency),
+      nz(dto.due_day),
+      nz(dto.reminder_days),
+      nz(dto.installments),
+      nz(dto.installment_value),
+      nz(dto.source_bank),
+      nz(dto.source_account),
       nz(dto.description),
       nz(dto.transaction_date),
       timestamp,
@@ -706,6 +810,191 @@ export async function deleteLocalObjective(
   });
 }
 
+// ─── Empresas ────────────────────────────────────────────────────────────────
+//
+// Se usan para asociar una transacción a una empresa/pagador y para la
+// creación inline "al vuelo" desde el formulario de transacciones. Solo
+// soportan CREATE offline (no editar/borrar desde móvil todavía).
+
+export async function saveCompanies(companies: EmpresaResponse[]): Promise<void> {
+  const db = await getDatabase();
+  for (const c of companies) {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO companies (id, local_id, user_id, name, default_category_id, created_at, updated_at, is_pending_sync)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+      [
+        nz(c.id),
+        String(c.id),
+        nz(c.user_id),
+        nz(c.name),
+        nz(c.default_category_id),
+        nz(c.created_at),
+        nz(c.updated_at),
+      ],
+    );
+  }
+}
+
+export async function getLocalCompanies(userId: number): Promise<EmpresaResponse[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{
+    id: number;
+    user_id: number;
+    name: string;
+    default_category_id: number | null;
+    created_at: string;
+    updated_at: string;
+  }>("SELECT * FROM companies WHERE user_id = ?", [userId]);
+  return rows.map((r) => ({
+    id: r.id,
+    user_id: r.user_id,
+    name: r.name,
+    default_category_id: r.default_category_id,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+  }));
+}
+
+export async function createLocalCompany(
+  userId: number,
+  dto: CreateEmpresaDto,
+): Promise<EmpresaResponse> {
+  const db = await getDatabase();
+  const localId = generateLocalId();
+  const timestamp = now();
+  await db.runAsync(
+    `INSERT INTO companies (local_id, user_id, name, default_category_id, created_at, updated_at, is_pending_sync)
+     VALUES (?, ?, ?, ?, ?, ?, 1)`,
+    [localId, userId, dto.name, dto.default_category_id ?? null, timestamp, timestamp],
+  );
+  const row = await db.getFirstAsync<{ id: number }>(
+    "SELECT id FROM companies WHERE local_id = ?",
+    [localId],
+  );
+  await enqueuePendingOperation(localId, "companies", "CREATE", {
+    userId,
+    ...dto,
+    localId,
+  });
+  return {
+    id: row!.id,
+    user_id: userId,
+    name: dto.name,
+    default_category_id: dto.default_category_id ?? null,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+}
+
+// ─── Activos y pasivos financieros (caché de solo lectura) ───────────────────
+//
+// Se usan para el selector de "patrimonio asociado" en el formulario de
+// transacciones. A diferencia de cuentas/objetivos/empresas, todavía no
+// soportan creación inline desde móvil — solo se cachea lo que trae el
+// servidor para que el selector funcione sin conexión.
+
+export async function saveFinancialAssets(
+  assets: FinancialAssetResponse[],
+): Promise<void> {
+  const db = await getDatabase();
+  for (const a of assets) {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO financial_assets (id, user_id, asset_type, name, current_value, current_yield, currency, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        nz(a.id),
+        nz(a.user_id),
+        nz(a.asset_type),
+        nz(a.name),
+        nz(a.current_value) ?? 0,
+        nz(a.current_yield),
+        nz(a.currency),
+        nz(a.created_at),
+        nz(a.updated_at),
+      ],
+    );
+  }
+}
+
+export async function getLocalFinancialAssets(
+  userId: number,
+): Promise<FinancialAssetResponse[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{
+    id: number;
+    user_id: number;
+    asset_type: string;
+    name: string;
+    current_value: number;
+    current_yield: number | null;
+    currency: string;
+    created_at: string;
+    updated_at: string;
+  }>("SELECT * FROM financial_assets WHERE user_id = ?", [userId]);
+  return rows.map((r) => ({
+    id: r.id,
+    user_id: r.user_id,
+    asset_type: r.asset_type as FinancialAssetResponse["asset_type"],
+    name: r.name,
+    current_value: r.current_value,
+    current_yield: r.current_yield,
+    currency: r.currency,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+  }));
+}
+
+export async function saveFinancialLiabilities(
+  liabilities: FinancialLiabilityResponse[],
+): Promise<void> {
+  const db = await getDatabase();
+  for (const l of liabilities) {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO financial_liabilities (id, user_id, liability_type, name, current_balance, interest_rate, currency, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        nz(l.id),
+        nz(l.user_id),
+        nz(l.liability_type),
+        nz(l.name),
+        nz(l.current_balance) ?? 0,
+        nz(l.interest_rate),
+        nz(l.currency),
+        nz(l.created_at),
+        nz(l.updated_at),
+      ],
+    );
+  }
+}
+
+export async function getLocalFinancialLiabilities(
+  userId: number,
+): Promise<FinancialLiabilityResponse[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{
+    id: number;
+    user_id: number;
+    liability_type: string;
+    name: string;
+    current_balance: number;
+    interest_rate: number | null;
+    currency: string;
+    created_at: string;
+    updated_at: string;
+  }>("SELECT * FROM financial_liabilities WHERE user_id = ?", [userId]);
+  return rows.map((r) => ({
+    id: r.id,
+    user_id: r.user_id,
+    liability_type: r.liability_type as FinancialLiabilityResponse["liability_type"],
+    name: r.name,
+    current_balance: r.current_balance,
+    interest_rate: r.interest_rate ?? undefined,
+    currency: r.currency,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+  }));
+}
+
 // ─── Colapso de UPDATE/DELETE sobre un CREATE aún no sincronizado ────────────
 
 /** Tablas permitidas para las operaciones de colapso (evita inyección de nombre de tabla). */
@@ -713,6 +1002,7 @@ const ENTITY_TABLES = new Map<string, string>([
   ["transactions", "transactions"],
   ["bank_accounts", "bank_accounts"],
   ["financial_objectives", "financial_objectives"],
+  ["companies", "companies"],
 ]);
 
 async function findPendingCreateOperation(
@@ -869,6 +1159,7 @@ export async function markEntitySynced(
     ["transactions", "transactions"],
     ["bank_accounts", "bank_accounts"],
     ["financial_objectives", "financial_objectives"],
+    ["companies", "companies"],
   ]);
   const table = ALLOWED_TABLES.get(entity);
   if (!table) return;
