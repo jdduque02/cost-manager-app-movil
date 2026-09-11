@@ -67,5 +67,10 @@ export { default as Clock } from "lucide-react-native/icons/clock";
 export { default as CreditCard } from "lucide-react-native/icons/credit-card";
 export { default as Banknote } from "lucide-react-native/icons/banknote";
 export { default as CircleDollarSign } from "lucide-react-native/icons/circle-dollar-sign";
+export { default as CircleCheck } from "lucide-react-native/icons/circle-check";
+export { default as CircleX } from "lucide-react-native/icons/circle-x";
+export { default as TriangleAlert } from "lucide-react-native/icons/triangle-alert";
+export { default as Info } from "lucide-react-native/icons/info";
+export { default as MessageSquareText } from "lucide-react-native/icons/message-square-text";
 
 export type { LucideIcon } from "lucide-react-native";
