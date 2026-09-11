@@ -42,6 +42,17 @@ const config: ExpoConfig = {
         backgroundColor: "#1E5C3A",
       },
     ],
+    [
+      "expo-share-intent",
+      {
+        // Solo texto plano: forwarding de SMS/notificaciones bancarias.
+        // No se habilita imágenes/archivos — ver memory/share-transaction-decision.md.
+        iosActivationRules: {
+          NSExtensionActivationSupportsText: true,
+        },
+        androidIntentFilters: ["text/*"],
+      },
+    ],
   ],
   experiments: {
     typedRoutes: true,
