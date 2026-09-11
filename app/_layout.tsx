@@ -20,10 +20,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import NetInfo from "@react-native-community/netinfo";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { ShareIntentProvider, useShareIntentContext } from "expo-share-intent";
 import { useAuthStore } from "@/store/auth.store";
 import { useOfflineStore } from "@/store/offline.store";
 import { getDatabase } from "@/database/database.service";
 import { ThemeProvider, useAppTheme } from "@/components/ThemeProvider";
+import { AppToast } from "@/components/ui/Toast";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -46,6 +48,7 @@ function RootLayoutInner() {
   const setOnlineStatus = useOfflineStore((state) => state.setOnlineStatus);
   const { resolvedScheme } = useAppTheme();
   const wasAuthenticated = useRef(isAuthenticated);
+  const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntentContext();
 
   // Redirige a login cuando la sesión pasa de autenticada a no-autenticada
   // (expiración irrecuperable o logout), no en el montaje inicial.
@@ -85,6 +88,17 @@ function RootLayoutInner() {
     return () => unsubscribe();
   }, [initialize, setOnlineStatus]);
 
+  // Contenido compartido desde otra app (SMS/notificación de banco reenviada
+  // manualmente vía share sheet nativo, ver memory/share-transaction-decision.md).
+  // Solo interesa `shareIntent.text` — imágenes/archivos no están habilitados
+  // en el plugin (androidIntentFilters: ["text/*"]).
+  useEffect(() => {
+    if (!hasShareIntent || !shareIntent?.text || !isAuthenticated) return;
+    const text = shareIntent.text;
+    resetShareIntent();
+    router.push({ pathname: "/shared-transaction", params: { text } });
+  }, [hasShareIntent, shareIntent, isAuthenticated, resetShareIntent]);
+
   if (!fontsLoaded) {
     return null;
   }
@@ -114,21 +128,25 @@ function RootLayoutInner() {
         <Stack.Screen name="categories" />
         <Stack.Screen name="news" />
         <Stack.Screen name="objectives/[id]" />
+        <Stack.Screen name="shared-transaction" options={{ presentation: "modal" }} />
       </Stack>
+      <AppToast />
     </View>
   );
 }
 
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
-          <ThemeProvider>
-            <RootLayoutInner />
-          </ThemeProvider>
-        </QueryClientProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <ShareIntentProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <QueryClientProvider client={queryClient}>
+            <ThemeProvider>
+              <RootLayoutInner />
+            </ThemeProvider>
+          </QueryClientProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </ShareIntentProvider>
   );
 }

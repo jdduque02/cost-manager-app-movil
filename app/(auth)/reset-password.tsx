@@ -1,4 +1,4 @@
-import { View, Text, Pressable, KeyboardAvoidingView, Platform, ScrollView, Alert } from "react-native";
+import { View, Text, Pressable, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import { useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import * as authApi from "@/api/auth.api";
@@ -6,6 +6,7 @@ import { SprigLogo } from "@/components/ui/SprigLogo";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { toast } from "@/utils/toast";
 
 export default function ResetPasswordScreen() {
   const { token, email } = useLocalSearchParams<{ token?: string; email?: string }>();
@@ -15,33 +16,32 @@ export default function ResetPasswordScreen() {
 
   async function handleResetPassword() {
     if (!password || !confirmPassword) {
-      Alert.alert("Campos requeridos", "Completa ambos campos");
+      toast.error("Campos requeridos", "Completa ambos campos");
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert("Error", "Las contrasenas no coinciden");
+      toast.error("Las contrasenas no coinciden");
       return;
     }
 
     if (password.length < 8) {
-      Alert.alert("Error", "La contrasena debe tener al menos 8 caracteres");
+      toast.error("La contrasena debe tener al menos 8 caracteres");
       return;
     }
 
     if (!token || !email) {
-      Alert.alert("Error", "Token de recuperacion no valido");
+      toast.error("Token de recuperacion no valido");
       return;
     }
 
     try {
       setIsLoading(true);
       await authApi.resetPassword(email, token, password);
-      Alert.alert("Exito", "Tu contrasena ha sido actualizada", [
-        { text: "OK", onPress: () => router.replace("/(auth)/login") },
-      ]);
+      toast.success("Tu contrasena ha sido actualizada");
+      router.replace("/(auth)/login");
     } catch {
-      Alert.alert("Error", "No se pudo restablecer la contrasena");
+      toast.error("No se pudo restablecer la contrasena");
     } finally {
       setIsLoading(false);
     }

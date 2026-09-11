@@ -1,4 +1,4 @@
-import { View, Text, Pressable, KeyboardAvoidingView, Platform, ScrollView, Alert } from "react-native";
+import { View, Text, Pressable, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import { useState } from "react";
 import { router } from "expo-router";
 import * as usersApi from "@/api/users.api";
@@ -6,6 +6,7 @@ import { SprigLogo } from "@/components/ui/SprigLogo";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { toast } from "@/utils/toast";
 
 export default function RegisterScreen() {
   const [fullName, setFullName] = useState("");
@@ -18,17 +19,17 @@ export default function RegisterScreen() {
 
   async function handleRegister() {
     if (!fullName || !email || !username || !password) {
-      Alert.alert("Campos requeridos", "Completa todos los campos");
+      toast.error("Campos requeridos", "Completa todos los campos");
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert("Error", "Las contrasenas no coinciden");
+      toast.error("Las contrasenas no coinciden");
       return;
     }
 
     if (password.length < 8) {
-      Alert.alert("Error", "La contrasena debe tener al menos 8 caracteres");
+      toast.error("La contrasena debe tener al menos 8 caracteres");
       return;
     }
 

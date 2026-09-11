@@ -6,7 +6,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
 } from "react-native";
 import { useState, useEffect } from "react";
 import { router } from "expo-router";
@@ -26,6 +25,7 @@ import { SprigLogo } from "@/components/ui/SprigLogo";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Eye, EyeOff } from "@/components/ui/icons";
+import { toast } from "@/utils/toast";
 
 export default function LoginScreen() {
   const { login, loginOffline, isLoading, error, clearError } = useAuthStore();
@@ -58,13 +58,13 @@ export default function LoginScreen() {
     const cleanPassword = password;
 
     if (!cleanUsername || !cleanPassword) {
-      Alert.alert("Campos requeridos", "Ingresa usuario y contrasena");
+      toast.error("Campos requeridos", "Ingresa usuario y contrasena");
       return;
     }
 
     const usernameCheck = validateUsername(cleanUsername);
     if (!usernameCheck.valid) {
-      Alert.alert("Usuario invalido", usernameCheck.message);
+      toast.error("Usuario invalido", usernameCheck.message);
       return;
     }
 
@@ -72,7 +72,7 @@ export default function LoginScreen() {
     if (!rateCheck.allowed) {
       const mins = Math.ceil((rateCheck.retryAfterSeconds ?? 0) / 60);
       setLockoutSeconds(rateCheck.retryAfterSeconds ?? 0);
-      Alert.alert(
+      toast.warning(
         "Demasiados intentos",
         `Cuenta bloqueada temporalmente. Intenta de nuevo en ${mins} min.`,
       );
@@ -99,7 +99,7 @@ export default function LoginScreen() {
     if (success) {
       router.replace("/(tabs)");
     } else {
-      Alert.alert(
+      toast.warning(
         "Sin sesion guardada",
         "No hay datos de sesion almacenados. Inicia sesion con conexion a internet al menos una vez.",
       );

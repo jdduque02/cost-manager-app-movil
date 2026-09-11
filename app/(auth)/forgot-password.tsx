@@ -1,4 +1,4 @@
-import { View, Text, Pressable, KeyboardAvoidingView, Platform, ScrollView, Alert } from "react-native";
+import { View, Text, Pressable, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import { useState } from "react";
 import { router } from "expo-router";
 import * as authApi from "@/api/auth.api";
@@ -6,6 +6,7 @@ import { SprigLogo } from "@/components/ui/SprigLogo";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { toast } from "@/utils/toast";
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState("");
@@ -14,7 +15,7 @@ export default function ForgotPasswordScreen() {
 
   async function handleForgotPassword() {
     if (!email.trim()) {
-      Alert.alert("Campo requerido", "Ingresa tu email");
+      toast.error("Ingresa tu email");
       return;
     }
 
@@ -23,7 +24,7 @@ export default function ForgotPasswordScreen() {
       await authApi.forgotPassword({ email });
       setSent(true);
     } catch {
-      Alert.alert("Error", "No se pudo enviar el email de recuperacion");
+      toast.error("No se pudo enviar el email de recuperacion");
     } finally {
       setIsLoading(false);
     }
