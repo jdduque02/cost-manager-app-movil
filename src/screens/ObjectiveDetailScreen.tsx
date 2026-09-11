@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, RefreshControl, Modal, Alert, Pressable } from "react-native";
+import { View, Text, ScrollView, RefreshControl, Modal, Pressable } from "react-native";
 import { useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, router } from "expo-router";
@@ -16,6 +16,7 @@ import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ArrowLeft, Search, PiggyBank } from "@/components/ui/icons";
+import { toast } from "@/utils/toast";
 import type {
   FinancialObjectiveResponse,
   ObjectivePaymentResponse,
@@ -109,9 +110,10 @@ export default function ObjectiveDetailScreen() {
       setShowPayModal(false);
       setPayAmount("");
       setPayNotes("");
+      toast.success("Pago registrado");
     },
     onError: (err: unknown) => {
-      Alert.alert("Error", err instanceof Error ? err.message : "Error al registrar pago");
+      toast.error("Error al registrar pago", err instanceof Error ? err.message : undefined);
     },
   });
 
@@ -123,11 +125,11 @@ export default function ObjectiveDetailScreen() {
   function handlePay() {
     const amount = parseFloat(payAmount);
     if (!amount || amount <= 0) {
-      Alert.alert("Monto inválido", "Ingresa un monto mayor a 0");
+      toast.error("Monto inválido", "Ingresa un monto mayor a 0");
       return;
     }
     if (!isOnline) {
-      Alert.alert("Sin conexión", "Los pagos requieren conexión a internet");
+      toast.warning("Sin conexión", "Los pagos requieren conexión a internet");
       return;
     }
     payMutation.mutate({ amount, note: payNotes || undefined });

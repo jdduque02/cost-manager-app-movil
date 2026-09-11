@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ArrowLeft, Monitor } from "@/components/ui/icons";
+import { toast } from "@/utils/toast";
 import { router } from "expo-router";
 
 function formatDate(iso: string): string {
@@ -36,10 +37,10 @@ export default function SessionsScreen() {
     mutationFn: (sessionId: string) => authApi.revokeSession(sessionId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      Alert.alert("Sesión revocada", "La sesión ha sido cerrada correctamente.");
+      toast.success("Sesión revocada", "La sesión ha sido cerrada correctamente.");
     },
     onError: () => {
-      Alert.alert("Error", "No se pudo revocar la sesión.");
+      toast.error("No se pudo revocar la sesión.");
     },
   });
 

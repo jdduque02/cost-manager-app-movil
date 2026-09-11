@@ -5,7 +5,6 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from "react-native";
 import { useState } from "react";
 import { router } from "expo-router";
@@ -16,6 +15,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ArrowLeft, Check } from "@/components/ui/icons";
+import { toast } from "@/utils/toast";
 
 function validatePassword(pw: string): string[] {
   const errors: string[] = [];
@@ -46,17 +46,16 @@ export default function ChangePasswordScreen() {
 
   async function handleChangePassword() {
     if (!isFormValid) {
-      Alert.alert("Formulario incompleto", "Corrige los errores antes de continuar");
+      toast.error("Formulario incompleto", "Corrige los errores antes de continuar");
       return;
     }
     setLoading(true);
     try {
       await authApi.changePassword(currentPassword, newPassword);
-      Alert.alert("Contraseña cambiada", "Tu contraseña ha sido actualizada correctamente.", [
-        { text: "OK", onPress: () => router.back() },
-      ]);
+      toast.success("Contraseña cambiada", "Tu contraseña ha sido actualizada correctamente.");
+      router.back();
     } catch {
-      Alert.alert("Error", "No se pudo cambiar la contraseña. Verifica tu contraseña actual.");
+      toast.error("No se pudo cambiar la contraseña", "Verifica tu contraseña actual.");
     } finally {
       setLoading(false);
     }

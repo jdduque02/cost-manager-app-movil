@@ -25,6 +25,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { IconTile } from "@/components/ui/IconTile";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tag, ChevronRight, Plus } from "@/components/ui/icons";
+import { toast } from "@/utils/toast";
 import type { CategoryResponse, GroupType } from "@/types/catalog.types";
 
 const BUCKET_LABELS: Record<string, string> = {
@@ -144,7 +145,7 @@ export default function CategoriesScreen() {
 
   function handleCreateCategory() {
     if (!categoryForm.name.trim()) {
-      Alert.alert("Campo requerido", "El nombre es obligatorio");
+      toast.error("El nombre es obligatorio");
       return;
     }
     Alert.alert(
@@ -165,9 +166,9 @@ export default function CategoriesScreen() {
               setShowCategoryModal(false);
               setCategoryForm({ name: "", icon_key: "", color_hex: "", type: "expense" });
               queryClient.invalidateQueries({ queryKey: ["categories"] });
-              Alert.alert("Éxito", "Categoría creada");
+              toast.success("Categoría creada");
             } catch {
-              Alert.alert("Error", "No se pudo crear la categoría");
+              toast.error("No se pudo crear la categoría");
             }
           },
         },
@@ -177,7 +178,7 @@ export default function CategoriesScreen() {
 
   function handleCreateSubcategory() {
     if (!subcategoryForm.name.trim() || !selectedCategory || !userId) {
-      Alert.alert("Campo requerido", "El nombre es obligatorio");
+      toast.error("El nombre es obligatorio");
       return;
     }
     Alert.alert(
@@ -199,9 +200,9 @@ export default function CategoriesScreen() {
               queryClient.invalidateQueries({
                 queryKey: ["subcategories", selectedCategory.id],
               });
-              Alert.alert("Éxito", "Subcategoría creada");
+              toast.success("Subcategoría creada");
             } catch {
-              Alert.alert("Error", "No se pudo crear la subcategoría");
+              toast.error("No se pudo crear la subcategoría");
             }
           },
         },

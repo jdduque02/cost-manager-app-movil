@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { ListRow } from "@/components/ui/ListRow";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Building2, Pencil, Trash, Plus } from "@/components/ui/icons";
+import { toast } from "@/utils/toast";
 import type { EmpresaResponse } from "@/types/empresa.types";
 
 export default function EmpresasScreen() {
@@ -52,7 +53,7 @@ export default function EmpresasScreen() {
 
   const handleSave = useCallback(async () => {
     if (!name.trim() || !userId) {
-      Alert.alert("Error", "El nombre es obligatorio");
+      toast.error("El nombre es obligatorio");
       return;
     }
     setSaving(true);
@@ -65,7 +66,7 @@ export default function EmpresasScreen() {
       queryClient.invalidateQueries({ queryKey: ["empresas", userId] });
       setShowModal(false);
     } catch (err: unknown) {
-      Alert.alert("Error", err instanceof Error ? err.message : "No se pudo guardar");
+      toast.error("No se pudo guardar", err instanceof Error ? err.message : undefined);
     } finally {
       setSaving(false);
     }
@@ -83,8 +84,9 @@ export default function EmpresasScreen() {
             try {
               await empresasApi.deleteEmpresa(userId, empresa.id);
               queryClient.invalidateQueries({ queryKey: ["empresas", userId] });
+              toast.success("Empresa eliminada");
             } catch (err: unknown) {
-              Alert.alert("Error", err instanceof Error ? err.message : "No se pudo eliminar");
+              toast.error("No se pudo eliminar", err instanceof Error ? err.message : undefined);
             }
           },
         },

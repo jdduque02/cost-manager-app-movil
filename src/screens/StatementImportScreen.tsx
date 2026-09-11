@@ -4,7 +4,6 @@ import {
   Text,
   Pressable,
   ScrollView,
-  Alert,
   RefreshControl,
   Modal,
   Dimensions,
@@ -24,6 +23,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import * as statementApi from "@/api/statement-imports.api";
 import type { StatementImportRecord } from "@/types/statement-import.types";
 import { ArrowLeft, CloudUpload, FileText, CircleAlert, X, Trash } from "@/components/ui/icons";
+import { toast } from "@/utils/toast";
 
 type FileToUpload = { uri: string; name: string; mimeType: string };
 
@@ -73,9 +73,10 @@ export default function StatementImportScreen() {
       setShowUploadModal(false);
       setProgress({ processed: 0, total: record.total_records_parsed });
       queryClient.invalidateQueries({ queryKey: ["statement-imports", userId] });
+      toast.success("Extracto subido", "Se está procesando en segundo plano.");
     },
     onError: (err: Error) => {
-      Alert.alert("Error", err.message || "Error al subir extractos");
+      toast.error("Error al subir extractos", err.message || undefined);
     },
   });
 
