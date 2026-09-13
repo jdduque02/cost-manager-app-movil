@@ -5,6 +5,7 @@ import {
   type QueryKey,
 } from "@tanstack/react-query";
 import { useOfflineStore } from "@/store/offline.store";
+import { useAuthStore } from "@/store/auth.store";
 import { isSessionExpiredError } from "@/api/client";
 
 /**
@@ -24,7 +25,11 @@ export function useOfflineQuery<TData>(
   options: UseQueryOptions<TData, Error, TData, QueryKey>,
   localFallback: () => Promise<TData>,
 ) {
-  const isOnline = useOfflineStore((s) => s.isOnline);
+  const isGuest = useAuthStore((s) => s.isGuest);
+  // El invitado no tiene cuenta real en el backend (su "userId" es el
+  // sentinel local GUEST_USER_ID) — tratarlo siempre como offline evita
+  // peticiones de red condenadas a fallar contra ese id.
+  const isOnline = useOfflineStore((s) => s.isOnline) && !isGuest;
   // El resultado de una query que cayó al fallback sigue siendo un `success`
   // desde la perspectiva de React Query (no lanza), así que `query.isError`
   // no sirve para detectarlo — este estado se actualiza dentro de `queryFn`

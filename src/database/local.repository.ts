@@ -31,6 +31,72 @@ import type {
   CreateEmpresaDto,
 } from "@/types/empresa.types";
 
+// ─── Modo invitado (offline sin login) ───────────────────────────────────────
+//
+// Un usuario que nunca ha iniciado sesión puede usar la app 100% localmente.
+// Sus filas se guardan con este `user_id` local reservado (nunca lo asigna el
+// backend real, que usa autoincrement positivo) en vez de `null`, para poder
+// reusar sin cambios todas las queries `getLocal*(userId)` / `createLocal*`
+// existentes. Cuando el invitado se registra o inicia sesión con una cuenta
+// real, `migrateGuestDataToUser` remapea estas filas (y los payloads de
+// `pending_operations`) al `user_id` real recién obtenido.
+export const GUEST_USER_ID = -1;
+
+/**
+ * Reasigna todos los datos creados en modo invitado (user_id = GUEST_USER_ID)
+ * al usuario real recién autenticado. Se llama una sola vez, justo después de
+ * un login/registro exitoso cuando la sesión anterior era de invitado.
+ *
+ * Cubre tanto las tablas de datos (para que el usuario vea sus registros bajo
+ * su cuenta real) como los payloads JSON de `pending_operations` (para que al
+ * sincronizar se le asignen al backend con el `user_id` correcto en vez del
+ * sentinel local, que el servidor rechazaría).
+ */
+export async function migrateGuestDataToUser(newUserId: number): Promise<void> {
+  if (!Number.isInteger(newUserId) || newUserId <= 0) return;
+  const db = await getDatabase();
+  const GUEST_OWNED_TABLES = [
+    "transactions",
+    "bank_accounts",
+    "financial_objectives",
+    "companies",
+    "financial_assets",
+    "financial_liabilities",
+    "subcategories",
+    "objective_payments",
+  ] as const;
+
+  await db.withTransactionAsync(async () => {
+    for (const table of GUEST_OWNED_TABLES) {
+      // Nombres de tabla vienen de la lista fija de arriba, no de input
+      // externo — interpolarlos en el DDL no abre una inyección SQL.
+      await db.runAsync(`UPDATE ${table} SET user_id = ? WHERE user_id = ?`, [
+        newUserId,
+        GUEST_USER_ID,
+      ]);
+    }
+
+    const pending = await db.getAllAsync<{ id: number; payload: string }>(
+      "SELECT id, payload FROM pending_operations",
+    );
+    for (const row of pending) {
+      let payload: Record<string, unknown>;
+      try {
+        payload = JSON.parse(row.payload);
+      } catch {
+        continue;
+      }
+      if (payload.userId === GUEST_USER_ID) {
+        payload.userId = newUserId;
+        await db.runAsync("UPDATE pending_operations SET payload = ? WHERE id = ?", [
+          JSON.stringify(payload),
+          row.id,
+        ]);
+      }
+    }
+  });
+}
+
 // ─── Utilidad ───────────────────────────────────────────────────────────────
 
 /**
@@ -94,22 +160,27 @@ export async function saveCategories(
   categories: CategoryResponse[],
 ): Promise<void> {
   const db = await getDatabase();
-  for (const cat of categories) {
-    await db.runAsync(
-      `INSERT OR REPLACE INTO categories (id, name, icon_key, color_hex, group_type, sort_order, is_active, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        nz(cat.id),
-        nz(cat.name),
-        nz(cat.icon_key),
-        nz(cat.color_hex),
-        nz(cat.group_type),
-        nz(cat.sort_order) ?? 0,
-        cat.is_active ? 1 : 0,
-        nz(cat.created_at),
-      ],
-    );
-  }
+  // Un solo `INSERT OR REPLACE` por lote en vez de uno por fila commiteado
+  // individualmente — evita el overhead de commit repetido de SQLite cuando
+  // el lote crece (ver hallazgo H2.2 de la auditoría de sept/2026).
+  await db.withTransactionAsync(async () => {
+    for (const cat of categories) {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO categories (id, name, icon_key, color_hex, group_type, sort_order, is_active, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          nz(cat.id),
+          nz(cat.name),
+          nz(cat.icon_key),
+          nz(cat.color_hex),
+          nz(cat.group_type),
+          nz(cat.sort_order) ?? 0,
+          cat.is_active ? 1 : 0,
+          nz(cat.created_at),
+        ],
+      );
+    }
+  });
 }
 
 export async function getLocalCategories(): Promise<CategoryResponse[]> {
@@ -195,25 +266,28 @@ export async function saveBankAccounts(
   accounts: BankAccountResponse[],
 ): Promise<void> {
   const db = await getDatabase();
-  for (const a of accounts) {
-    await db.runAsync(
-      `INSERT OR REPLACE INTO bank_accounts
-        (id, local_id, user_id, bank_name, account_type, balance, currency, is_primary, created_at, updated_at, is_pending_sync)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      [
-        nz(a.id),
-        String(a.id),
-        nz(a.user_id),
-        nz(a.bank_name),
-        nz(a.account_type),
-        Number(a.display_balance ?? 0),
-        nz(a.currency),
-        a.is_primary ? 1 : 0,
-        nz(a.created_at),
-        nz(a.updated_at),
-      ],
-    );
-  }
+  // Ver comentario de `saveCategories` — un solo commit por lote.
+  await db.withTransactionAsync(async () => {
+    for (const a of accounts) {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO bank_accounts
+          (id, local_id, user_id, bank_name, account_type, balance, currency, is_primary, created_at, updated_at, is_pending_sync)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+        [
+          nz(a.id),
+          String(a.id),
+          nz(a.user_id),
+          nz(a.bank_name),
+          nz(a.account_type),
+          Number(a.display_balance ?? 0),
+          nz(a.currency),
+          a.is_primary ? 1 : 0,
+          nz(a.created_at),
+          nz(a.updated_at),
+        ],
+      );
+    }
+  });
 }
 
 export async function getLocalBankAccounts(
@@ -360,44 +434,49 @@ export async function saveTransactions(
   transactions: TransactionRecordResponse[],
 ): Promise<void> {
   const db = await getDatabase();
-  for (const t of transactions) {
-    await db.runAsync(
-      `INSERT OR REPLACE INTO transactions
-        (id, local_id, user_id, category_id, subcategory_id, account_id, asset_id, liability_id, objective_id, company_id,
-         type, amount, currency, payment_method, is_fixed, fixed_type, frequency, due_day, reminder_days,
-         installments, installment_value, source_bank, source_account, description, transaction_date, created_at, updated_at, is_pending_sync)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      [
-        nz(t.id),
-        String(t.id),
-        nz(t.user_id),
-        nz(t.category_id),
-        nz(t.subcategory_id),
-        nz(t.account_id),
-        nz(t.asset_id),
-        nz(t.liability_id),
-        nz(t.objective_id),
-        nz(t.company_id),
-        nz(t.type),
-        nz(t.amount) ?? 0,
-        nz(t.currency),
-        nz(t.payment_method),
-        t.is_fixed ? 1 : 0,
-        nz(t.fixed_type),
-        nz(t.frequency),
-        nz(t.due_day),
-        nz(t.reminder_days),
-        nz(t.installments),
-        nz(t.installment_value),
-        nz(t.source_bank),
-        nz(t.source_account),
-        nz(t.description),
-        nz(t.transaction_date),
-        nz(t.created_at),
-        nz(t.updated_at),
-      ],
-    );
-  }
+  // Ver comentario de `saveCategories` — un solo commit por lote. Relevante
+  // aquí en particular: es la tabla con más filas por lote (hasta 200/500
+  // según el `limit` de la query que llame a `saveTransactions`).
+  await db.withTransactionAsync(async () => {
+    for (const t of transactions) {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO transactions
+          (id, local_id, user_id, category_id, subcategory_id, account_id, asset_id, liability_id, objective_id, company_id,
+           type, amount, currency, payment_method, is_fixed, fixed_type, frequency, due_day, reminder_days,
+           installments, installment_value, source_bank, source_account, description, transaction_date, created_at, updated_at, is_pending_sync)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+        [
+          nz(t.id),
+          String(t.id),
+          nz(t.user_id),
+          nz(t.category_id),
+          nz(t.subcategory_id),
+          nz(t.account_id),
+          nz(t.asset_id),
+          nz(t.liability_id),
+          nz(t.objective_id),
+          nz(t.company_id),
+          nz(t.type),
+          nz(t.amount) ?? 0,
+          nz(t.currency),
+          nz(t.payment_method),
+          t.is_fixed ? 1 : 0,
+          nz(t.fixed_type),
+          nz(t.frequency),
+          nz(t.due_day),
+          nz(t.reminder_days),
+          nz(t.installments),
+          nz(t.installment_value),
+          nz(t.source_bank),
+          nz(t.source_account),
+          nz(t.description),
+          nz(t.transaction_date),
+          nz(t.created_at),
+          nz(t.updated_at),
+        ],
+      );
+    }
+  });
 }
 
 export async function getLocalTransactions(
@@ -644,27 +723,30 @@ export async function saveObjectives(
   objectives: FinancialObjectiveResponse[],
 ): Promise<void> {
   const db = await getDatabase();
-  for (const o of objectives) {
-    await db.runAsync(
-      `INSERT OR REPLACE INTO financial_objectives
-        (id, local_id, user_id, name, type, target_amount, current_balance, start_date, end_date, is_completed, created_at, updated_at, is_pending_sync)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      [
-        nz(o.id),
-        String(o.id),
-        nz(o.user_id),
-        nz(o.name),
-        nz(o.type),
-        nz(o.target_amount),
-        nz(o.current_balance) ?? 0,
-        nz(o.start_date),
-        nz(o.end_date),
-        o.is_completed ? 1 : 0,
-        nz(o.created_at),
-        nz(o.updated_at),
-      ],
-    );
-  }
+  // Ver comentario de `saveCategories` — un solo commit por lote.
+  await db.withTransactionAsync(async () => {
+    for (const o of objectives) {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO financial_objectives
+          (id, local_id, user_id, name, type, target_amount, current_balance, start_date, end_date, is_completed, created_at, updated_at, is_pending_sync)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+        [
+          nz(o.id),
+          String(o.id),
+          nz(o.user_id),
+          nz(o.name),
+          nz(o.type),
+          nz(o.target_amount),
+          nz(o.current_balance) ?? 0,
+          nz(o.start_date),
+          nz(o.end_date),
+          o.is_completed ? 1 : 0,
+          nz(o.created_at),
+          nz(o.updated_at),
+        ],
+      );
+    }
+  });
 }
 
 export async function getLocalObjectives(
@@ -818,21 +900,24 @@ export async function deleteLocalObjective(
 
 export async function saveCompanies(companies: EmpresaResponse[]): Promise<void> {
   const db = await getDatabase();
-  for (const c of companies) {
-    await db.runAsync(
-      `INSERT OR REPLACE INTO companies (id, local_id, user_id, name, default_category_id, created_at, updated_at, is_pending_sync)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
-      [
-        nz(c.id),
-        String(c.id),
-        nz(c.user_id),
-        nz(c.name),
-        nz(c.default_category_id),
-        nz(c.created_at),
-        nz(c.updated_at),
-      ],
-    );
-  }
+  // Ver comentario de `saveCategories` — un solo commit por lote.
+  await db.withTransactionAsync(async () => {
+    for (const c of companies) {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO companies (id, local_id, user_id, name, default_category_id, created_at, updated_at, is_pending_sync)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+        [
+          nz(c.id),
+          String(c.id),
+          nz(c.user_id),
+          nz(c.name),
+          nz(c.default_category_id),
+          nz(c.created_at),
+          nz(c.updated_at),
+        ],
+      );
+    }
+  });
 }
 
 export async function getLocalCompanies(userId: number): Promise<EmpresaResponse[]> {

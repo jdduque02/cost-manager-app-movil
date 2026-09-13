@@ -35,7 +35,12 @@ import { useQueryClient } from "@tanstack/react-query";
  * Invalida automáticamente las queries de React Query relacionadas.
  */
 export function useOfflineMutations() {
-  const isOnline = useOfflineStore((s) => s.isOnline);
+  const isGuest = useAuthStore((s) => s.isGuest);
+  // En modo invitado nunca hay una cuenta real en el backend que pueda
+  // recibir estas peticiones (el "userId" es el sentinel local
+  // GUEST_USER_ID) — forzar siempre la ruta local evita peticiones de red
+  // condenadas a fallar (o, peor, aceptadas por error contra un id ajeno).
+  const isOnline = useOfflineStore((s) => s.isOnline) && !isGuest;
   const refreshPendingCount = useOfflineStore((s) => s.refreshPendingCount);
   const userId = useAuthStore((s) => s.userId) ?? 1;
   const queryClient = useQueryClient();
