@@ -9,15 +9,39 @@ import {
   cacheUser,
   getCachedUser,
   clearCachedUser,
+  migrateGuestDataToUser,
+  GUEST_USER_ID,
 } from "@/database/local.repository";
 import type { LoginDto } from "@/types/auth.types";
 import type { UserResponse } from "@/types/user.types";
 
 const CACHED_USER_ID_KEY = "cached_user_id";
+// Persiste que la sesión activa es "modo invitado" para poder restaurarla al
+// reabrir la app (initialize()) sin depender de un usuario cacheado real.
+const GUEST_MODE_KEY = "guest_mode_active_v1";
+
+/**
+ * Usuario sintético para el modo invitado: no viene del backend (no hay
+ * sesión real), solo sirve para que las pantallas que muestran `user.*`
+ * (perfil, saludo del dashboard) tengan algo coherente que renderizar.
+ */
+function buildGuestUser(): UserResponse {
+  const nowIso = new Date().toISOString();
+  return {
+    id: GUEST_USER_ID,
+    username: "invitado",
+    email: "",
+    full_name: "Invitado",
+    is_active: true,
+    created_at: nowIso,
+    updated_at: null,
+  };
+}
 
 interface AuthState {
   isAuthenticated: boolean;
   isOfflineMode: boolean;
+  isGuest: boolean;
   isLoading: boolean;
   user: UserResponse | null;
   userId: number | null;
@@ -26,6 +50,7 @@ interface AuthState {
   initialize: () => Promise<void>;
   login: (dto: LoginDto) => Promise<void>;
   loginOffline: () => Promise<boolean>;
+  continueAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
   handleSessionExpired: () => Promise<void>;
   setUser: (user: UserResponse) => void;
@@ -44,6 +69,7 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   isOfflineMode: false,
+  isGuest: false,
   isLoading: true,
   user: null,
   userId: null,
@@ -67,6 +93,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({
           isAuthenticated: true,
           isOfflineMode: false,
+          isGuest: false,
           user: cachedUser,
           userId: cachedUser.id,
           isLoading: false,
@@ -80,6 +107,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({
           isAuthenticated: true,
           isOfflineMode: true,
+          isGuest: false,
           user: cachedUser,
           userId: cachedUser.id,
           isLoading: false,
@@ -87,7 +115,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return;
       }
 
-      set({ isAuthenticated: false, isOfflineMode: false, isLoading: false });
+      // 3. Sin token ni usuario cacheado: restaurar modo invitado si la
+      // última sesión activa era una (nunca inició sesión, pero ya venía
+      // usando la app localmente).
+      const wasGuest = await SecureStore.getItemAsync(GUEST_MODE_KEY);
+      if (wasGuest === "1") {
+        set({
+          isAuthenticated: true,
+          isOfflineMode: false,
+          isGuest: true,
+          user: buildGuestUser(),
+          userId: GUEST_USER_ID,
+          isLoading: false,
+        });
+        return;
+      }
+
+      set({
+        isAuthenticated: false,
+        isOfflineMode: false,
+        isGuest: false,
+        isLoading: false,
+      });
     } catch {
       // Si falla todo, intentar modo offline con caché
       try {
@@ -96,6 +145,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           set({
             isAuthenticated: true,
             isOfflineMode: true,
+            isGuest: false,
             user: cachedUser,
             userId: cachedUser.id,
             isLoading: false,
@@ -105,12 +155,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       } catch {
         // ignorar
       }
-      set({ isAuthenticated: false, isOfflineMode: false, isLoading: false });
+      set({
+        isAuthenticated: false,
+        isOfflineMode: false,
+        isGuest: false,
+        isLoading: false,
+      });
     }
   },
 
   login: async (dto: LoginDto) => {
     set({ isLoading: true, error: null });
+    const wasGuest = get().isGuest;
     try {
       const tokenData = await authApi.login(dto);
 
@@ -122,9 +178,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({
         isAuthenticated: true,
         isOfflineMode: false,
+        isGuest: false,
         isLoading: false,
         userId: userId ?? null,
       });
+
+      // Si veníamos de modo invitado, reasignar los datos locales creados sin
+      // cuenta (user_id = GUEST_USER_ID) al usuario real recién logueado.
+      // Solo se limpia la marca de invitado si la migración corrió y no
+      // lanzó: si falla, o si el login no trajo un userId utilizable, se deja
+      // la marca activa para reintentar en el próximo login exitoso en vez de
+      // perder silenciosamente el rastro de esos datos.
+      if (wasGuest) {
+        if (userId) {
+          try {
+            await migrateGuestDataToUser(userId);
+            await SecureStore.deleteItemAsync(GUEST_MODE_KEY);
+          } catch {
+            // No bloquear el login por esto.
+          }
+        }
+      } else {
+        await SecureStore.deleteItemAsync(GUEST_MODE_KEY);
+      }
 
       // Cachear el usuario completo (SQLite + store) para que sobreviva a un
       // reinicio de la app — sin esto, `initialize()` no encuentra usuario en
@@ -173,6 +249,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({
         isAuthenticated: true,
         isOfflineMode: true,
+        isGuest: false,
         user: cachedUser,
         userId: cachedUser.id,
         error: null,
@@ -180,6 +257,35 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return true;
     }
     return false;
+  },
+
+  // Modo invitado: entra a la app sin cuenta ni red, usando datos 100%
+  // locales bajo GUEST_USER_ID. Se persiste en SecureStore para sobrevivir a
+  // un reinicio de la app (ver paso 3 de `initialize`). Si el usuario ya
+  // tenía una sesión real cacheada, se prioriza esa — nunca "downgradea" un
+  // usuario real conocido a invitado.
+  continueAsGuest: async () => {
+    const cachedUser = await getCachedUser();
+    if (cachedUser) {
+      set({
+        isAuthenticated: true,
+        isOfflineMode: true,
+        isGuest: false,
+        user: cachedUser,
+        userId: cachedUser.id,
+        error: null,
+      });
+      return;
+    }
+    await SecureStore.setItemAsync(GUEST_MODE_KEY, "1");
+    set({
+      isAuthenticated: true,
+      isOfflineMode: false,
+      isGuest: true,
+      user: buildGuestUser(),
+      userId: GUEST_USER_ID,
+      error: null,
+    });
   },
 
   logout: async () => {
@@ -195,9 +301,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await clearTokens();
     } finally {
       await clearCachedUser();
+      await SecureStore.deleteItemAsync(GUEST_MODE_KEY);
       set({
         isAuthenticated: false,
         isOfflineMode: false,
+        isGuest: false,
         user: null,
         userId: null,
         isLoading: false,
@@ -210,9 +318,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   handleSessionExpired: async () => {
     await clearTokens();
     await clearCachedUser();
+    await SecureStore.deleteItemAsync(GUEST_MODE_KEY);
     set({
       isAuthenticated: false,
       isOfflineMode: false,
+      isGuest: false,
       user: null,
       userId: null,
       isLoading: false,
