@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { View, Text, FlatList, Pressable, Alert, RefreshControl } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as authApi from "@/api/auth.api";
@@ -27,6 +28,12 @@ function formatDate(iso: string): string {
 export default function SessionsScreen() {
   const queryClient = useQueryClient();
   const { resolvedScheme } = useAppTheme();
+  // Trackea qué sesión se está revocando en este momento para que solo el
+  // botón de esa fila muestre el spinner — `revokeMutation.isPending` es
+  // global a la mutación, así que usarlo directo prendía el loading en TODAS
+  // las filas del `FlatList` a la vez (ver hallazgo H1.3 de la auditoría de
+  // sept/2026).
+  const [revokingId, setRevokingId] = useState<string | null>(null);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["sessions"],
@@ -42,6 +49,13 @@ export default function SessionsScreen() {
     onError: () => {
       toast.error("No se pudo revocar la sesión.");
     },
+    // Solo limpia `revokingId` si sigue siendo el de ESTA llamada — si el
+    // usuario revoca la sesión A y luego, antes de que termine, la sesión B,
+    // que A resuelva primero no debe apagar el spinner de B (hallazgo de
+    // code-review sobre H1.3, sept/2026).
+    onSettled: (_data, _err, sessionId) => {
+      setRevokingId((current) => (current === sessionId ? null : current));
+    },
   });
 
   function handleRevoke(session: SessionResponse) {
@@ -50,7 +64,10 @@ export default function SessionsScreen() {
       {
         text: "Revocar",
         style: "destructive",
-        onPress: () => revokeMutation.mutate(session.sessionId),
+        onPress: () => {
+          setRevokingId(session.sessionId);
+          revokeMutation.mutate(session.sessionId);
+        },
       },
     ]);
   }
@@ -104,7 +121,7 @@ export default function SessionsScreen() {
               variant="destructive"
               size="sm"
               onPress={() => handleRevoke(item)}
-              loading={revokeMutation.isPending}
+              loading={revokeMutation.isPending && revokingId === item.sessionId}
             >
               Revocar sesión
             </Button>

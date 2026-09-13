@@ -25,7 +25,19 @@ import type { StatementImportRecord } from "@/types/statement-import.types";
 import { ArrowLeft, CloudUpload, FileText, CircleAlert, X, Trash } from "@/components/ui/icons";
 import { toast } from "@/utils/toast";
 
-type FileToUpload = { uri: string; name: string; mimeType: string };
+type FileToUpload = { uri: string; name: string; mimeType: string; pickId: string };
+
+/**
+ * Id sintético por archivo seleccionado, independiente de `uri`. El picker
+ * copia a `cacheDirectory` así que dos selecciones normalmente generan URIs
+ * distintas, pero no está garantizado (ej. mismo documento elegido dos veces
+ * en sistemas donde el picker reutiliza la copia en caché) — usar solo `uri`
+ * como `key` podía colisionar y desconectar el botón de "quitar" de la fila
+ * equivocada (hallazgo de code-review sobre H2.3, sept/2026).
+ */
+function generatePickId(): string {
+  return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+}
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Pendiente",
@@ -52,12 +64,25 @@ export default function StatementImportScreen() {
   const [selectedFiles, setSelectedFiles] = useState<FileToUpload[]>([]);
   const [password, setPassword] = useState("");
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [, setProgress] = useState<{ processed: number; total: number } | null>(null);
 
   const { data: imports, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ["statement-imports", userId],
     queryFn: () => statementApi.getStatementImports(userId!),
     enabled: !!userId,
+    // Progreso real mientras un import está en curso: el backend procesa en
+    // segundo plano (ver toast tras subir) y `total_records_created` va
+    // subiendo entre polls — reconsultamos cada 3s solo mientras haya algún
+    // import en `pending`/`processing`, y dejamos de hacerlo apenas todos
+    // quedan en un estado terminal (completed/partial/failed). Reemplaza el
+    // estado local `progress` que antes se calculaba y nunca se leía en el
+    // render (ver hallazgo H5.1 de la auditoría de sept/2026).
+    refetchInterval: (query) => {
+      const rows = query.state.data?.data ?? [];
+      const hasInFlight = rows.some(
+        (r) => r.status === "pending" || r.status === "processing",
+      );
+      return hasInFlight ? 3000 : false;
+    },
   });
 
   const uploadMutation = useMutation({
@@ -67,11 +92,10 @@ export default function StatementImportScreen() {
         skipDuplicates: true,
         defaultType: "expense",
       }),
-    onSuccess: (record) => {
+    onSuccess: () => {
       setSelectedFiles([]);
       setPassword("");
       setShowUploadModal(false);
-      setProgress({ processed: 0, total: record.total_records_parsed });
       queryClient.invalidateQueries({ queryKey: ["statement-imports", userId] });
       toast.success("Extracto subido", "Se está procesando en segundo plano.");
     },
@@ -99,6 +123,7 @@ export default function StatementImportScreen() {
         uri: asset.uri,
         name: asset.name,
         mimeType: asset.mimeType || "application/pdf",
+        pickId: generatePickId(),
       }));
       setSelectedFiles((prev) => [...prev, ...files]);
       setShowUploadModal(true);
@@ -265,7 +290,7 @@ export default function StatementImportScreen() {
             <ScrollView className="mb-4">
               {selectedFiles.map((file, index) => (
                 <View
-                  key={index}
+                  key={file.pickId}
                   className="flex-row items-center justify-between bg-surface rounded-xl p-3 mb-2"
                 >
                   <View className="flex-1 mr-2">

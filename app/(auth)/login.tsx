@@ -28,7 +28,8 @@ import { Eye, EyeOff } from "@/components/ui/icons";
 import { toast } from "@/utils/toast";
 
 export default function LoginScreen() {
-  const { login, loginOffline, isLoading, error, clearError } = useAuthStore();
+  const { login, loginOffline, continueAsGuest, isLoading, error, clearError } =
+    useAuthStore();
   const { resolvedScheme } = useAppTheme();
   const c = PALETTE[resolvedScheme];
   const [username, setUsername] = useState("");
@@ -104,6 +105,11 @@ export default function LoginScreen() {
         "No hay datos de sesion almacenados. Inicia sesion con conexion a internet al menos una vez.",
       );
     }
+  }
+
+  async function handleContinueAsGuest() {
+    await continueAsGuest();
+    router.replace("/(tabs)");
   }
 
   const isLocked = lockoutSeconds > 0;
@@ -212,6 +218,16 @@ export default function LoginScreen() {
               Continuar sin conexion
             </Button>
           )}
+
+          <Button
+            variant="ghost"
+            size="lg"
+            onPress={handleContinueAsGuest}
+            disabled={isLoading}
+            className="mt-3"
+          >
+            Continuar sin cuenta
+          </Button>
 
           <View className="flex-row justify-center mt-5">
             <Text className="text-muted-foreground text-sm font-sans">No tienes cuenta? </Text>

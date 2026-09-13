@@ -1,6 +1,8 @@
-import { View, Text, ScrollView, RefreshControl, Modal, Pressable } from "react-native";
-import { useState, useCallback } from "react";
+import { View, Text, ScrollView, RefreshControl, Modal, Pressable, Alert } from "react-native";
+import { useState, useCallback, useEffect } from "react";
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useReducedMotion, EASE_STANDARD } from "@/utils/animations";
 import { useLocalSearchParams, router } from "expo-router";
 import { useAuthStore } from "@/store/auth.store";
 import * as objectivesApi from "@/api/objectives.api";
@@ -33,10 +35,23 @@ function formatCOP(amount: number): string {
 function ProgressBar({ value, total }: { value: number; total: number }) {
   const pct = total > 0 ? Math.min((value / total) * 100, 100) : 0;
   const color = pct >= 75 ? "bg-success" : pct >= 40 ? "bg-primary" : "bg-warning";
+  const reduceMotion = useReducedMotion();
+  const width = useSharedValue(reduceMotion ? pct : 0);
+
+  useEffect(() => {
+    width.value = reduceMotion
+      ? pct
+      : withTiming(pct, { duration: 500, easing: EASE_STANDARD });
+    // Solo re-animar cuando cambia el porcentaje real (ej. al registrar un
+    // pago) — `reduceMotion`/`width` son estables entre renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pct]);
+
+  const animatedStyle = useAnimatedStyle(() => ({ width: `${width.value}%` }));
 
   return (
     <View className="h-3 bg-muted rounded-full overflow-hidden">
-      <View className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      <Animated.View className={`h-full rounded-full ${color}`} style={animatedStyle} />
     </View>
   );
 }
@@ -132,7 +147,21 @@ export default function ObjectiveDetailScreen() {
       toast.warning("Sin conexión", "Los pagos requieren conexión a internet");
       return;
     }
-    payMutation.mutate({ amount, note: payNotes || undefined });
+    // No existe forma de editar/eliminar un pago de objetivo ya registrado
+    // desde la app (ni endpoint ni UI) — un monto mal tecleado queda
+    // permanente contra `current_balance`. Se confirma explícitamente el
+    // monto antes de enviar (ver hallazgo H6.1 de la auditoría de sept/2026).
+    Alert.alert(
+      "Confirmar pago",
+      `¿Registrar un pago de ${formatCOP(amount)} en "${objective?.name}"? Esta acción no se puede deshacer.`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Confirmar",
+          onPress: () => payMutation.mutate({ amount, note: payNotes || undefined }),
+        },
+      ],
+    );
   }
 
   if (isLoading) return <DetailSkeleton />;

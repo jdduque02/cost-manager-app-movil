@@ -33,7 +33,14 @@ import { toast } from "@/utils/toast";
 type ThemeOption = "light" | "dark" | "system";
 
 export default function ProfileScreen() {
-  const { user, userId, logout, isLoading: authLoading, isOfflineMode } = useAuthStore();
+  const {
+    user,
+    userId,
+    logout,
+    isLoading: authLoading,
+    isOfflineMode,
+    isGuest,
+  } = useAuthStore();
   const { isOnline, isSyncing, pendingCount, sync, lastSyncAt } = useOfflineStore();
   const { theme, setTheme, resolvedScheme } = useAppTheme();
   const c = PALETTE[resolvedScheme];
@@ -41,13 +48,16 @@ export default function ProfileScreen() {
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ["financial-profile", userId],
     queryFn: () => usersApi.getFinancialProfile(userId as number),
-    enabled: !!userId && isOnline,
+    enabled: !!userId && isOnline && !isGuest,
     retry: false,
     networkMode: "always",
   });
 
   async function handleLogout() {
-    Alert.alert("Cerrar sesión", "¿Deseas salir de tu cuenta?", [
+    const message = isGuest
+      ? "¿Deseas salir del modo invitado? Tus datos locales no se pierden, pero deja de tener acceso a ellos hasta volver a entrar como invitado o con una cuenta."
+      : "¿Deseas salir de tu cuenta?";
+    Alert.alert(isGuest ? "Salir del modo invitado" : "Cerrar sesión", message, [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Salir",
@@ -108,6 +118,37 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 py-6 gap-7">
+      {/* Banner de modo invitado */}
+      {isGuest && (
+        <Card>
+          <Text className="text-sm font-sans-semibold text-foreground mb-1">
+            Estás en modo invitado
+          </Text>
+          <Text className="text-sm font-sans text-muted-foreground mb-4">
+            Tus datos se guardan solo en este dispositivo. Crea una cuenta o
+            inicia sesión para respaldarlos y verlos desde cualquier lugar.
+          </Text>
+          <View className="flex-row gap-2">
+            <Button
+              variant="default"
+              size="sm"
+              className="flex-1"
+              onPress={() => router.push("/(auth)/register")}
+            >
+              Crear cuenta
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onPress={() => router.push("/(auth)/login")}
+            >
+              Iniciar sesión
+            </Button>
+          </View>
+        </Card>
+      )}
+
       {/* Avatar Header */}
       <View className="items-center">
         <View className="w-20 h-20 rounded-full bg-primary justify-center items-center mb-3">
@@ -126,7 +167,10 @@ export default function ProfileScreen() {
           Información personal
         </Text>
         {[
-          { label: "ID de usuario", value: userId != null ? String(userId) : "—" },
+          {
+            label: "ID de usuario",
+            value: isGuest ? "Invitado (local)" : userId != null ? String(userId) : "—",
+          },
           { label: "Estado", value: user?.is_active ? "Activo" : "Inactivo" },
           {
             label: "Miembro desde",
@@ -261,7 +305,7 @@ export default function ProfileScreen() {
 
       {/* Logout */}
       <Button variant="destructive" size="lg" onPress={handleLogout}>
-        Cerrar sesión
+        {isGuest ? "Salir del modo invitado" : "Cerrar sesión"}
       </Button>
     </ScrollView>
   );

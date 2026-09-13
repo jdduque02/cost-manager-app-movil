@@ -8,9 +8,11 @@ import {
   ScrollView,
   Pressable,
 } from "react-native";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
 import { router } from "expo-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useReducedMotion, EASE_STANDARD } from "@/utils/animations";
 import { useAuthStore } from "@/store/auth.store";
 import * as objectivesApi from "@/api/objectives.api";
 import * as localRepo from "@/database/local.repository";
@@ -50,10 +52,24 @@ function ProgressBar({ value, total }: { value: number; total: number }) {
   const c = PALETTE[resolvedScheme];
   const pct = total > 0 ? Math.min((value / total) * 100, 100) : 0;
   const barColor = pct >= 75 ? c.success : pct >= 40 ? c.primary : c.warning;
+  const reduceMotion = useReducedMotion();
+  const width = useSharedValue(reduceMotion ? pct : 0);
+
+  useEffect(() => {
+    width.value = reduceMotion
+      ? pct
+      : withTiming(pct, { duration: 500, easing: EASE_STANDARD });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pct]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    width: `${width.value}%`,
+    backgroundColor: barColor,
+  }));
 
   return (
     <View className="h-2 bg-muted rounded-full overflow-hidden mt-2">
-      <View className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: barColor }} />
+      <Animated.View className="h-full rounded-full" style={animatedStyle} />
     </View>
   );
 }
