@@ -18,3 +18,14 @@ correspondiente en `memory/`.
   patrimonio asociados, transferencias, duplicar) al móvil, y por qué la
   migración de esquema SQLite de esta ronda usó `ALTER TABLE` en vez de
   renombrar el archivo `.db`.
+- [`memory/guest-mode-decision.md`](memory/guest-mode-decision.md) —
+  por qué "offline sin login" se resolvió como modo invitado local completo
+  (sentinel `GUEST_USER_ID`, persistencia en SecureStore, migración de datos
+  al loguearse/registrarse) y qué pantallas quedan fuera del tratamiento
+  `isGuest` en esta ronda.
+- [`memory/audit-sept-2026-quick-wins.md`](memory/audit-sept-2026-quick-wins.md) —
+  qué "quick wins" de la auditoría general de sept/2026 (transacciones SQLite
+  por lote, confirmación de pago de objetivo, loading por fila en sesiones,
+  progreso real de importación de extractos, keys estables, barras de
+  progreso animadas) se implementaron, y por qué H2.1 (caché offline de
+  listas online) y H2.5 (`EmpresasScreen` sin offline-first) se difirieron.
