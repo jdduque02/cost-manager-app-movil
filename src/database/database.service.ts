@@ -29,18 +29,31 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (db) return db;
   if (!dbPromise) {
     dbPromise = (async () => {
-      const SQLiteModule = await loadSQLite();
-      // Se mantiene el mismo archivo que v2 (a diferencia de la migración
-      // v1→v2, que sí forzó una base limpia): un usuario puede tener
-      // transacciones offline sin sincronizar en `pending_operations` en este
-      // archivo, y renombrarlo las perdería silenciosamente. Las columnas
-      // nuevas de transacción fija/cuotas/asociaciones se agregan vía
-      // `migrateTransactionsTable` (ALTER TABLE) en vez de recrear la base.
-      const instance = await SQLiteModule.openDatabaseAsync("cost_manager_v2.db");
-      await initSchema(instance);
-      await migrateTransactionsTable(instance);
-      db = instance;
-      return instance;
+      try {
+        const SQLiteModule = await loadSQLite();
+        // Se mantiene el mismo archivo que v2 (a diferencia de la migración
+        // v1→v2, que sí forzó una base limpia): un usuario puede tener
+        // transacciones offline sin sincronizar en `pending_operations` en este
+        // archivo, y renombrarlo las perdería silenciosamente. Las columnas
+        // nuevas de transacción fija/cuotas/asociaciones se agregan vía
+        // `migrateTransactionsTable` (ALTER TABLE) en vez de recrear la base.
+        const instance = await SQLiteModule.openDatabaseAsync("cost_manager_v2.db");
+        await initSchema(instance);
+        await migrateTransactionsTable(instance);
+        await migrateObjectivesTable(instance);
+        await rebuildObjectivesTableIfLegacyCheckExists(instance);
+        db = instance;
+        return instance;
+      } catch (error) {
+        // Si cualquier paso de apertura/migración falla, no dejamos la
+        // promesa fallida cacheada para siempre: eso convertiría un error
+        // puntual (p.ej. de migración) en una app inutilizable de forma
+        // permanente, porque toda la capa de datos depende de
+        // `getDatabase()`. Al resetear `dbPromise` a null, la siguiente
+        // llamada puede reintentar la apertura desde cero.
+        dbPromise = null;
+        throw error;
+      }
     })();
   }
   return dbPromise;
@@ -171,12 +184,26 @@ async function initSchema(database: SQLite.SQLiteDatabase): Promise<void> {
     );
 
     -- Objetivos financieros
+    -- Nota: sin CHECK sobre "type" a propósito. Un CHECK aquí se queda
+    -- desactualizado cada vez que el backend agrega un tipo nuevo (pasó con
+    -- 'emergency_fund'). La validación de type ya vive en el tipo TS
+    -- FinancialObjectiveType y, de forma autoritativa, en el backend.
+    -- Este CREATE TABLE IF NOT EXISTS solo aplica a instalaciones NUEVAS: en
+    -- instalaciones existentes la tabla física ya está creada en disco con el
+    -- CHECK antiguo grabado en sqlite_master, y SQLite no permite ALTER de un
+    -- CHECK existente -- por eso rebuildObjectivesTableIfLegacyCheckExists,
+    -- más abajo, reconstruye la tabla completa (copiar filas a una tabla
+    -- nueva sin CHECK, dropear la vieja, renombrar) cuando detecta el CHECK
+    -- legado. No lo quites: sin eso, cualquier instalación previa a esta
+    -- feature rechaza silenciosamente los objetivos type='emergency_fund'.
+    -- months_of_expenses_covered (solo emergency_fund) se agrega vía
+    -- migrateObjectivesTable para no romper instalaciones existentes.
     CREATE TABLE IF NOT EXISTS financial_objectives (
       id INTEGER PRIMARY KEY,
       local_id TEXT UNIQUE,
       user_id INTEGER NOT NULL,
       name TEXT NOT NULL,
-      type TEXT NOT NULL CHECK(type IN ('loan','savings','goal')),
+      type TEXT NOT NULL,
       target_amount REAL,
       current_balance REAL NOT NULL DEFAULT 0,
       start_date TEXT,
@@ -249,6 +276,110 @@ async function migrateTransactionsTable(database: SQLite.SQLiteDatabase): Promis
       // así que interpolarlos en el DDL no abre una inyección SQL.
       await database.execAsync(`ALTER TABLE transactions ADD COLUMN ${name} ${type}`);
     }
+  }
+}
+
+/**
+ * Agrega a `financial_objectives` la columna `months_of_expenses_covered`
+ * (calculada por el backend solo para type=emergency_fund) que no existía en
+ * instalaciones previas. Sigue el mismo patrón idempotente que
+ * `migrateTransactionsTable`: en instalaciones nuevas el CREATE TABLE ya la
+ * incluye implícitamente vía este ALTER en el primer arranque, y en
+ * instalaciones existentes solo la agrega si falta, sin perder filas.
+ */
+export async function migrateObjectivesTable(database: SQLite.SQLiteDatabase): Promise<void> {
+  const existingColumns = await database.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(financial_objectives)",
+  );
+  const existing = new Set(existingColumns.map((c) => c.name));
+  if (!existing.has("months_of_expenses_covered")) {
+    await database.execAsync(
+      "ALTER TABLE financial_objectives ADD COLUMN months_of_expenses_covered REAL",
+    );
+  }
+}
+
+/**
+ * Reconstruye `financial_objectives` cuando la tabla física en disco todavía
+ * tiene el `CHECK(type IN ('loan','savings','goal'))` legado grabado en
+ * `sqlite_master`.
+ *
+ * Por qué hace falta: `CREATE TABLE IF NOT EXISTS` (en `initSchema`) es un
+ * no-op si la tabla ya existe, así que quitar el CHECK del texto del DDL solo
+ * afecta instalaciones nuevas. En un dispositivo con instalación previa, el
+ * archivo `cost_manager_v2.db` se reutiliza entre versiones (ver el
+ * comentario en `getDatabase()`), así que la tabla sigue validando el CHECK
+ * viejo. SQLite tampoco permite `ALTER TABLE ... DROP CONSTRAINT`/modificar
+ * un CHECK existente -- la única forma de relajarlo es el patrón estándar de
+ * reconstrucción: crear una tabla nueva con el esquema actual (sin CHECK),
+ * copiar todas las filas, dropear la vieja y renombrar la nueva.
+ *
+ * Idempotente: consulta `sqlite_master` y solo actúa si el CHECK sigue
+ * presente; en instalaciones nuevas o ya migradas no hace nada. Preserva
+ * todas las columnas, incluida `is_pending_sync` (crítica: objetivos offline
+ * sin sincronizar todavía en `pending_operations` no deben perderse) y
+ * `months_of_expenses_covered` (puede o no existir según si
+ * `migrateObjectivesTable` ya corrió antes).
+ *
+ * IMPORTANTE (foreign_keys): `objective_payments.objective_id` referencia
+ * `financial_objectives(id)` y `PRAGMA foreign_keys = ON` está activo (ver
+ * `initSchema`). Con la FK activa, `DROP TABLE financial_objectives` falla
+ * con `FOREIGN KEY constraint failed` en cuanto existe al menos una fila en
+ * `objective_payments` (feature "Pagos a objetivos", ya en uso). SQLite
+ * documenta el patrón oficial para reconstrucciones de esquema con FKs de
+ * hijos: desactivar `foreign_keys` ANTES de la secuencia
+ * CREATE/INSERT/DROP/RENAME y reactivarlo al final. `PRAGMA foreign_keys`
+ * solo tiene efecto fuera de una transacción activa, así que no puede ir
+ * dentro de `withTransactionAsync` -- por eso el toggle ocurre fuera del
+ * `BEGIN/COMMIT` y la reconstrucción en sí se envuelve en `try/finally` para
+ * garantizar que la protección de integridad referencial se reactive incluso
+ * si la reconstrucción falla a mitad de camino.
+ */
+export async function rebuildObjectivesTableIfLegacyCheckExists(
+  database: SQLite.SQLiteDatabase,
+): Promise<void> {
+  const tableDef = await database.getFirstAsync<{ sql: string }>(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'financial_objectives'",
+  );
+  if (!tableDef?.sql || !tableDef.sql.includes("CHECK")) {
+    return;
+  }
+
+  await database.execAsync("PRAGMA foreign_keys = OFF;");
+  try {
+    await database.withTransactionAsync(async () => {
+      await database.execAsync(`
+        CREATE TABLE financial_objectives_new (
+          id INTEGER PRIMARY KEY,
+          local_id TEXT UNIQUE,
+          user_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL,
+          target_amount REAL,
+          current_balance REAL NOT NULL DEFAULT 0,
+          start_date TEXT,
+          end_date TEXT,
+          is_completed INTEGER DEFAULT 0,
+          created_at TEXT,
+          updated_at TEXT,
+          is_pending_sync INTEGER DEFAULT 0,
+          months_of_expenses_covered REAL
+        );
+        INSERT INTO financial_objectives_new
+          (id, local_id, user_id, name, type, target_amount, current_balance,
+           start_date, end_date, is_completed, created_at, updated_at,
+           is_pending_sync, months_of_expenses_covered)
+        SELECT
+          id, local_id, user_id, name, type, target_amount, current_balance,
+          start_date, end_date, is_completed, created_at, updated_at,
+          is_pending_sync, months_of_expenses_covered
+        FROM financial_objectives;
+        DROP TABLE financial_objectives;
+        ALTER TABLE financial_objectives_new RENAME TO financial_objectives;
+      `);
+    });
+  } finally {
+    await database.execAsync("PRAGMA foreign_keys = ON;");
   }
 }
 

@@ -1,4 +1,8 @@
-export type FinancialObjectiveType = "loan" | "savings" | "goal";
+export type FinancialObjectiveType =
+  | "loan"
+  | "savings"
+  | "goal"
+  | "emergency_fund";
 
 export interface FinancialObjectiveResponse {
   id: number;
@@ -12,6 +16,12 @@ export interface FinancialObjectiveResponse {
   is_completed: boolean;
   created_at: string;
   updated_at: string | null;
+  /**
+   * Solo se calcula por el backend cuando type=emergency_fund
+   * (balance actual / gasto mensual promedio de los últimos 3 meses).
+   * null/undefined para los demás tipos.
+   */
+  months_of_expenses_covered?: number | null;
 }
 
 export interface CreateFinancialObjectiveDto {

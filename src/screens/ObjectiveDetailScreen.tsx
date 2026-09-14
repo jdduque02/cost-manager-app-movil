@@ -240,14 +240,23 @@ export default function ObjectiveDetailScreen() {
             },
             { label: "Días restantes", value: `${daysLeft} días`, tone: "muted" as const },
             { label: "Cuota mensual sugerida", value: formatCurrency(monthlyNeeded), tone: "primary" as const },
-          ].map(({ label, value, tone }) => (
-            <View
-              key={label}
-              className="flex-row justify-between items-center py-2 border-b border-border last:border-0"
-            >
-              <Text className="text-sm font-sans text-muted-foreground">{label}</Text>
-              <Badge tone={tone}>{value}</Badge>
-            </View>
+            objective.type === "emergency_fund" && objective.months_of_expenses_covered != null
+              ? {
+                  label: "Meses de gastos cubiertos",
+                  value: `${objective.months_of_expenses_covered.toFixed(1)} meses`,
+                  tone: "primary" as const,
+                }
+              : null,
+          ]
+            .filter(<T,>(row: T | null): row is T => row !== null)
+            .map(({ label, value, tone }) => (
+              <View
+                key={label}
+                className="flex-row justify-between items-center py-2 border-b border-border last:border-0"
+              >
+                <Text className="text-sm font-sans text-muted-foreground">{label}</Text>
+                <Badge tone={tone}>{value}</Badge>
+              </View>
           ))}
         </View>
       </Card>

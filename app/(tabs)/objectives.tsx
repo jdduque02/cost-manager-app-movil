@@ -40,11 +40,12 @@ import type {
   FinancialObjectiveType,
 } from "@/types/objective.types";
 
-const OBJECTIVE_TYPES: FinancialObjectiveType[] = ["savings", "goal", "loan"];
+const OBJECTIVE_TYPES: FinancialObjectiveType[] = ["savings", "goal", "loan", "emergency_fund"];
 const OBJECTIVE_TYPE_LABELS: Record<FinancialObjectiveType, string> = {
   savings: "Ahorro",
   goal: "Meta",
   loan: "Préstamo",
+  emergency_fund: "Fondo de emergencia",
 };
 
 function ProgressBar({ value, total }: { value: number; total: number }) {
@@ -261,9 +262,16 @@ export default function ObjectivesScreen() {
                     {item.is_completed && <Badge tone="success">Completado</Badge>}
                   </View>
 
-                  <Text className="text-sm font-sans text-muted-foreground mb-2">
-                    {OBJECTIVE_TYPE_LABELS[item.type]}
-                  </Text>
+                  <View className="flex-row items-center mb-2">
+                    <Text className="text-sm font-sans text-muted-foreground">
+                      {OBJECTIVE_TYPE_LABELS[item.type]}
+                    </Text>
+                    {item.type === "emergency_fund" && item.months_of_expenses_covered != null && (
+                      <Badge tone="muted" className="ml-2">
+                        {`${item.months_of_expenses_covered.toFixed(1)} meses cubiertos`}
+                      </Badge>
+                    )}
+                  </View>
 
                   <View className="flex-row items-baseline mt-1">
                     <Money value={Number(item.current_balance)} className="text-lg text-foreground" />

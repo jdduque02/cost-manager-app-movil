@@ -794,8 +794,8 @@ export async function saveObjectives(
     for (const o of objectives) {
       await db.runAsync(
         `INSERT OR REPLACE INTO financial_objectives
-          (id, local_id, user_id, name, type, target_amount, current_balance, start_date, end_date, is_completed, created_at, updated_at, is_pending_sync)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+          (id, local_id, user_id, name, type, target_amount, current_balance, start_date, end_date, is_completed, created_at, updated_at, months_of_expenses_covered, is_pending_sync)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
         [
           nz(o.id),
           String(o.id),
@@ -809,6 +809,7 @@ export async function saveObjectives(
           o.is_completed ? 1 : 0,
           nz(o.created_at),
           nz(o.updated_at),
+          nz(o.months_of_expenses_covered),
         ],
       );
     }
@@ -832,6 +833,7 @@ export async function getLocalObjectives(
     is_completed: number;
     created_at: string;
     updated_at: string;
+    months_of_expenses_covered: number | null;
   }>("SELECT * FROM financial_objectives WHERE user_id = ?", [userId]);
   return rows.map((r) => ({
     id: r.id,
@@ -845,6 +847,11 @@ export async function getLocalObjectives(
     is_completed: r.is_completed === 1,
     created_at: r.created_at,
     updated_at: r.updated_at,
+    // Último valor conocido offline: es un cálculo derivado del backend
+    // (balance / gasto promedio 3 meses), no un dato editable localmente, así
+    // que no se recalcula aquí — puede quedar desactualizado hasta el
+    // próximo sync, lo cual es aceptable para un campo de solo lectura.
+    months_of_expenses_covered: r.months_of_expenses_covered,
   }));
 }
 
@@ -897,6 +904,9 @@ export async function createLocalObjective(
     is_completed: false,
     created_at: timestamp,
     updated_at: timestamp,
+    // Se calcula solo en el backend; un objetivo creado offline aún no tiene
+    // gasto promedio de los últimos 3 meses con el que calcularlo.
+    months_of_expenses_covered: null,
   };
 }
 

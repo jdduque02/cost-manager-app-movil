@@ -18,6 +18,10 @@ function normalizeObjective(
     ...o,
     target_amount: o.target_amount != null ? Number(o.target_amount) : null,
     current_balance: Number(o.current_balance ?? 0),
+    months_of_expenses_covered:
+      o.months_of_expenses_covered != null
+        ? Number(o.months_of_expenses_covered)
+        : null,
   };
 }
 
