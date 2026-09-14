@@ -1,4 +1,4 @@
-import { apiClient } from "./client";
+import { apiClient, unwrapList } from "./client";
 import type {
   TransactionRecordResponse,
   CreateTransactionRecordDto,
@@ -18,11 +18,23 @@ export async function getTransactions(
   userId: number,
   query: TransactionQueryDto = {},
 ): Promise<PaginatedTransactions> {
-  const { data } = await apiClient.get<PaginatedTransactions>(
-    `/users/${userId}/transactions`,
-    { params: query, preservePaginated: true },
-  );
-  return { ...data, data: data.data.map(normalizeTransaction) };
+  const { data } = await apiClient.get<
+    PaginatedTransactions | TransactionRecordResponse[]
+  >(`/users/${userId}/transactions`, {
+    params: query,
+    preservePaginated: true,
+  });
+  // El interceptor devuelve `{ data, total }` o un arreglo desnudo según lo
+  // que mande el backend — normalizar defensivamente (ver `unwrapList`).
+  const items = Array.isArray(data)
+    ? data
+    : unwrapList<TransactionRecordResponse>(
+        data as { data: TransactionRecordResponse[]; total?: number },
+      );
+  const total = Array.isArray(data)
+    ? data.length
+    : Number((data as { total?: number }).total ?? items.length);
+  return { data: items.map(normalizeTransaction), total };
 }
 
 export async function getTransaction(

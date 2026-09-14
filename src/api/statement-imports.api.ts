@@ -1,4 +1,4 @@
-import { apiClient } from "./client";
+import { apiClient, unwrapList } from "./client";
 import type { StatementImportRecord } from "@/types/statement-import.types";
 
 function one<T>(data: T | T[]): T {
@@ -10,14 +10,23 @@ export async function getStatementImports(
   page = 1,
   limit = 20,
 ): Promise<{ data: StatementImportRecord[]; total: number }> {
-  const { data } = await apiClient.get<{
-    data: StatementImportRecord[];
-    total: number;
-  }>(`/users/${userId}/statement-imports`, {
+  const { data } = await apiClient.get<
+    | { data: StatementImportRecord[]; total: number }
+    | StatementImportRecord[]
+  >(`/users/${userId}/statement-imports`, {
     params: { page, limit },
     preservePaginated: true,
   });
-  return data;
+  // Mismo trato defensivo que `getTransactions`: si el backend no manda
+  // `total`, el interceptor devuelve el arreglo desnudo.
+  if (Array.isArray(data)) return { data, total: data.length };
+  const items = unwrapList<StatementImportRecord>(
+    data as { data: StatementImportRecord[]; total?: number },
+  );
+  return {
+    data: items,
+    total: Number((data as { total?: number }).total ?? items.length),
+  };
 }
 
 export async function getStatementImport(
