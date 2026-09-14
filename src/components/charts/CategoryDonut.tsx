@@ -11,9 +11,9 @@ interface CategoryDonutProps {
 
 /**
  * Dona de gasto por categoría, orden de colores idéntico al de
- * `cost-manager-web/src/components/views/Dashboard.tsx:229-236`. Las
- * etiquetas van en una leyenda debajo (no como `dataLabels` externos del
- * donut web) — a ancho de teléfono son ilegibles pegadas a la dona.
+ * `Sprig-web/src/components/views/Dashboard.tsx:229-236`. Las etiquetas van
+ * en una leyenda debajo (no como `dataLabels` externos del donut web) — a
+ * ancho de teléfono son ilegibles pegadas a la dona.
  */
 export function CategoryDonut({ points }: CategoryDonutProps) {
   const colors = useChartColors();
@@ -67,7 +67,10 @@ export function CategoryDonut({ points }: CategoryDonutProps) {
       </View>
       <View className="gap-2 mt-3">
         {points.map((p, i) => (
-          <View key={p.category} className="flex-row items-center gap-2">
+          <View
+            key={`cat-${p.category_id != null ? p.category_id : "i" + i}`}
+            className="flex-row items-center gap-2"
+          >
             <View
               className="w-2.5 h-2.5 rounded-full"
               style={{ backgroundColor: paletteOrder[i % paletteOrder.length] }}

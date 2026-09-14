@@ -20,7 +20,7 @@ import { StatCard } from "@/components/ui/StatCard";
 import { ListRow } from "@/components/ui/ListRow";
 import { StaleDataBanner } from "@/components/StaleDataBanner";
 import { TrendAreaChart } from "@/components/charts/TrendAreaChart";
-import { groupByMonth } from "@/utils/chart-data";
+import { groupByMonth, txDate } from "@/utils/chart-data";
 import {
   Wallet,
   TrendingUp,
@@ -49,11 +49,11 @@ const TYPE_TONE: Record<string, "success" | "destructive" | "primary" | "info"> 
   transfer: "info",
 };
 
-const QUICK_ACTIONS: { label: string; href: "/(tabs)/transactions" | "/(tabs)/objectives" | "/(tabs)/banking"; icon: LucideIcon }[] = [
+const QUICK_ACTIONS: { label: string; href: "/(tabs)/transactions" | "/(tabs)/objectives" | "/reports" | "/statement-import"; icon: LucideIcon }[] = [
   { label: "Nueva Transacción", href: "/(tabs)/transactions", icon: ReceiptText },
-  { label: "Ver Reportes", href: "/(tabs)/transactions", icon: ChartColumn },
+  { label: "Ver Reportes", href: "/reports", icon: ChartColumn },
   { label: "Metas", href: "/(tabs)/objectives", icon: Target },
-  { label: "Importar", href: "/(tabs)/banking", icon: FileUp },
+  { label: "Importar", href: "/statement-import", icon: FileUp },
 ];
 
 export default function DashboardScreen() {
@@ -107,7 +107,7 @@ export default function DashboardScreen() {
   const currentMonthTx = useMemo(
     () =>
       transactions.filter((t) => {
-        const d = new Date(t.transaction_date);
+        const d = txDate(t);
         return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
       }),
     [transactions, now],
@@ -252,7 +252,7 @@ export default function DashboardScreen() {
                     icon={TYPE_ICON[tx.type] ?? ReceiptText}
                     tone={TYPE_TONE[tx.type] ?? "muted"}
                     title={tx.description ?? `Transacción #${tx.id}`}
-                    meta={new Date(tx.transaction_date).toLocaleDateString("es-CO")}
+                    meta={txDate(tx).toLocaleDateString("es-CO")}
                     amount={Number(tx.amount)}
                     amountPrefix={tx.type === "income" ? "+" : "-"}
                     amountClassName={tx.type === "income" ? "text-success" : "text-foreground"}

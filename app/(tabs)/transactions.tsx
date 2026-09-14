@@ -204,8 +204,8 @@ export default function TransactionsScreen() {
       enabled: !!form.category_id && !!userId,
     },
     () =>
-      form.category_id
-        ? localRepo.getLocalSubcategories(form.category_id)
+      form.category_id && userId
+        ? localRepo.getLocalSubcategories(userId, form.category_id)
         : Promise.resolve([]),
   );
 

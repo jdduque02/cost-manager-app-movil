@@ -35,8 +35,6 @@ import { toast } from "@/utils/toast";
 import type {
   CreateBankAccountDto,
   AccountType,
-  FinancialAssetResponse,
-  FinancialLiabilityResponse,
 } from "@/types/banking.types";
 import { ACCOUNT_TYPE_LABELS, accountTypeLabel } from "@/types/banking.types";
 
@@ -122,7 +120,7 @@ export default function BankingScreen() {
       queryFn: () => bankingApi.getFinancialAssets(userId as number),
       enabled: !!userId,
     },
-    async () => [] as FinancialAssetResponse[],
+    () => localRepo.getLocalFinancialAssets(userId as number),
   );
 
   const {
@@ -135,7 +133,7 @@ export default function BankingScreen() {
       queryFn: () => bankingApi.getFinancialLiabilities(userId as number),
       enabled: !!userId,
     },
-    async () => [] as FinancialLiabilityResponse[],
+    () => localRepo.getLocalFinancialLiabilities(userId as number),
   );
 
   const isLoading = loadingAccounts || loadingAssets || loadingLiabilities;

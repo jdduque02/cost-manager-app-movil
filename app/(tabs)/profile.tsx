@@ -216,7 +216,7 @@ export default function ProfileScreen() {
             >
               <Text className="text-sm font-sans text-muted-foreground">{label}</Text>
               <Text className="text-sm font-sans-semibold text-foreground">
-                {Math.round(value * 100)}%
+                {Math.round(value)}%
               </Text>
             </View>
           ))}

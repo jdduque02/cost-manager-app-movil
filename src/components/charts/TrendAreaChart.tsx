@@ -2,13 +2,8 @@ import { useState, useCallback } from "react";
 import { View, Text, type LayoutChangeEvent } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
 import { useChartColors } from "@/hooks/useChartColors";
+import { formatCompactCurrency } from "@/utils/format";
 import type { MonthlyPoint } from "@/utils/chart-data";
-
-function kFormatter(label: string): string {
-  const v = Number(label);
-  if (!Number.isFinite(v)) return label;
-  return v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${v}`;
-}
 
 interface TrendAreaChartProps {
   points: MonthlyPoint[];
@@ -83,7 +78,7 @@ export function TrendAreaChart({ points, height = 180 }: TrendAreaChartProps) {
             rulesColor={colors.border}
             rulesType="dashed"
             noOfSections={4}
-            formatYLabel={kFormatter}
+            formatYLabel={formatCompactCurrency}
             yAxisTextStyle={{ color: colors.mutedFg, fontSize: 11 }}
             xAxisLabelTextStyle={{ color: colors.mutedFg, fontSize: 11 }}
           />

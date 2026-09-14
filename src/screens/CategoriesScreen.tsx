@@ -126,8 +126,8 @@ export default function CategoriesScreen() {
       enabled: !!selectedCategory && !!userId,
     },
     () =>
-      selectedCategory
-        ? localRepo.getLocalSubcategories(selectedCategory.id)
+      selectedCategory && userId
+        ? localRepo.getLocalSubcategories(userId, selectedCategory.id)
         : Promise.resolve([]),
   );
 
