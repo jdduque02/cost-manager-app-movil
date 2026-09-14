@@ -10,12 +10,12 @@ import {
   getCachedUser,
   clearCachedUser,
   migrateGuestDataToUser,
+  wipeGuestData,
   GUEST_USER_ID,
 } from "@/database/local.repository";
 import type { LoginDto } from "@/types/auth.types";
 import type { UserResponse } from "@/types/user.types";
 
-const CACHED_USER_ID_KEY = "cached_user_id";
 // Persiste que la sesión activa es "modo invitado" para poder restaurarla al
 // reabrir la app (initialize()) sin depender de un usuario cacheado real.
 const GUEST_MODE_KEY = "guest_mode_active_v1";
@@ -171,9 +171,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const tokenData = await authApi.login(dto);
 
       const userId = tokenData.userId;
-      if (userId) {
-        await SecureStore.setItemAsync(CACHED_USER_ID_KEY, String(userId));
-      }
 
       set({
         isAuthenticated: true,
@@ -215,7 +212,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
       }
     } catch (err: unknown) {
-      console.error("[Auth] login failed:", err);
+      console.error(
+        "[Auth] login failed:",
+        isAxiosError(err)
+          ? (err.response?.data as { message?: string } | undefined)?.message ??
+              err.message
+          : err instanceof Error
+            ? err.message
+            : String(err),
+      );
       // Sin response = fallo de red real (DNS, TLS, timeout, conexión rechazada).
       // Con response (401, etc.) = el servidor respondió pero rechazó las credenciales.
       const isNetworkError = isAxiosError(err) && !err.response;
@@ -291,6 +296,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: async () => {
     set({ isLoading: true });
     try {
+      // Un invitado que sale nunca debe dejar sus datos locales (user_id = -1)
+      // huérfanos para el siguiente usuario/guest del dispositivo.
+      await wipeGuestData();
+    } catch {
+      // Es inofensivo si el wipe falla: no bloquear el logout por esto.
+    }
+    try {
       const { refreshToken } = await getStoredTokens();
       if (refreshToken) {
         await authApi.logout(refreshToken);
@@ -316,6 +328,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   // Como logout(), pero sin llamar al endpoint (el servidor ya rechazó el
   // token) y dejando un mensaje explicando por qué se salió de la sesión.
   handleSessionExpired: async () => {
+    try {
+      await wipeGuestData();
+    } catch {
+      // No bloquear la limpieza de sesión si el wipe falla.
+    }
     await clearTokens();
     await clearCachedUser();
     await SecureStore.deleteItemAsync(GUEST_MODE_KEY);

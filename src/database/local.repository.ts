@@ -97,6 +97,59 @@ export async function migrateGuestDataToUser(newUserId: number): Promise<void> {
   });
 }
 
+/**
+ * Borra TODOS los datos creados en modo invitado (user_id = GUEST_USER_ID):
+ * tanto las filas de las tablas de datos como las operaciones pendientes de
+ * `pending_operations` cuyo payload apunte al usuario invitado. Se llama al
+ * salir de la sesión (logout) o cuando ésta expira, para que los datos del
+ * invitado anterior no queden huérfanos para el siguiente usuario del
+ * dispositivo. Contraparte de `migrateGuestDataToUser`: ahí se reasignan los
+ * datos al usuario real, aquí se descartan para siempre.
+ */
+export async function wipeGuestData(): Promise<void> {
+  const db = await getDatabase();
+  const GUEST_OWNED_TABLES = [
+    "transactions",
+    "bank_accounts",
+    "financial_objectives",
+    "companies",
+    "financial_assets",
+    "financial_liabilities",
+    "subcategories",
+    "objective_payments",
+  ] as const;
+
+  await db.withTransactionAsync(async () => {
+    for (const table of GUEST_OWNED_TABLES) {
+      // Nombres de tabla vienen de la lista fija de arriba, no de input
+      // externo — interpolarlos en el DDL no abre una inyección SQL.
+      await db.runAsync(`DELETE FROM ${table} WHERE user_id = ?`, [
+        GUEST_USER_ID,
+      ]);
+    }
+
+    // Las operaciones sin sincronizar del invitado nunca podrán enviarse al
+    // servidor (un user_id = -1 sería rechazado) — borrarlas junto con los
+    // datos evita que un rest-encolado futuro apunte a filas inexistentes.
+    const pending = await db.getAllAsync<{ id: number; payload: string }>(
+      "SELECT id, payload FROM pending_operations",
+    );
+    for (const row of pending) {
+      let payload: Record<string, unknown>;
+      try {
+        payload = JSON.parse(row.payload);
+      } catch {
+        continue;
+      }
+      if (payload.userId === GUEST_USER_ID) {
+        await db.runAsync("DELETE FROM pending_operations WHERE id = ?", [
+          row.id,
+        ]);
+      }
+    }
+  });
+}
+
 // ─── Utilidad ───────────────────────────────────────────────────────────────
 
 /**
@@ -130,8 +183,9 @@ function nz<T>(value: T | null | undefined): T | null {
 
 /** Enmascara un número de cuenta local para mostrar solo los últimos 4 dígitos. */
 function maskAccountNumber(accountNumber: string): string {
-  const last4 = accountNumber.slice(-4);
-  return `****${last4}`;
+  // Números más cortos que 4 dígitos destaparían el número completo — enmascarar todo.
+  if (!accountNumber || accountNumber.length < 4) return "****";
+  return `****${accountNumber.slice(-4)}`;
 }
 
 // ─── Usuario ─────────────────────────────────────────────────────────────────
@@ -230,6 +284,7 @@ export async function saveSubcategories(
 }
 
 export async function getLocalSubcategories(
+  userId: number,
   categoryId?: number,
 ): Promise<SubcategoryResponse[]> {
   const db = await getDatabase();
@@ -244,9 +299,9 @@ export async function getLocalSubcategories(
     updated_at: string;
   }>(
     categoryId
-      ? "SELECT * FROM subcategories WHERE category_id = ?"
-      : "SELECT * FROM subcategories",
-    categoryId ? [categoryId] : [],
+      ? "SELECT * FROM subcategories WHERE user_id = ? AND category_id = ?"
+      : "SELECT * FROM subcategories WHERE user_id = ?",
+    categoryId ? [userId, categoryId] : [userId],
   );
   return rows.map((r) => ({
     id: r.id,
@@ -330,33 +385,40 @@ export async function createLocalBankAccount(
   const db = await getDatabase();
   const localId = generateLocalId();
   const timestamp = now();
-  await db.runAsync(
-    `INSERT INTO bank_accounts (local_id, user_id, bank_name, account_type, account_number, balance, currency, is_primary, created_at, updated_at, is_pending_sync)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-    [
-      localId,
+  let rowId = 0;
+  // INSERT + SELECT + enqueue en una sola transacción: si algo falla a mitad,
+  // no queda una fila `is_pending_sync=1` huérfana sin operación en la cola
+  // (la cual nunca se sincronizaría — pérdida silenciosa).
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `INSERT INTO bank_accounts (local_id, user_id, bank_name, account_type, account_number, balance, currency, is_primary, created_at, updated_at, is_pending_sync)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [
+        localId,
+        userId,
+        nz(dto.bank_name),
+        nz(dto.account_type),
+        nz(dto.account_number),
+        nz(dto.balance) ?? 0,
+        dto.currency ?? "COP",
+        dto.is_primary ? 1 : 0,
+        timestamp,
+        timestamp,
+      ],
+    );
+    const row = await db.getFirstAsync<{ id: number }>(
+      "SELECT id FROM bank_accounts WHERE local_id = ?",
+      [localId],
+    );
+    rowId = row!.id;
+    await enqueuePendingOperation(localId, "bank_accounts", "CREATE", {
       userId,
-      nz(dto.bank_name),
-      nz(dto.account_type),
-      nz(dto.account_number),
-      nz(dto.balance) ?? 0,
-      dto.currency ?? "COP",
-      dto.is_primary ? 1 : 0,
-      timestamp,
-      timestamp,
-    ],
-  );
-  const row = await db.getFirstAsync<{ id: number }>(
-    "SELECT id FROM bank_accounts WHERE local_id = ?",
-    [localId],
-  );
-  await enqueuePendingOperation(localId, "bank_accounts", "CREATE", {
-    userId,
-    ...dto,
-    localId,
+      ...dto,
+      localId,
+    });
   });
   return {
-    id: row!.id,
+    id: rowId,
     user_id: userId,
     bank_name: dto.bank_name,
     account_type: dto.account_type,
@@ -552,52 +614,56 @@ export async function createLocalTransaction(
   const db = await getDatabase();
   const localId = generateLocalId();
   const timestamp = now();
-  await db.runAsync(
-    `INSERT INTO transactions
-      (local_id, user_id, category_id, subcategory_id, account_id, asset_id, liability_id, objective_id, company_id,
-       type, amount, currency, payment_method, is_fixed, fixed_type, frequency, due_day, reminder_days,
-       installments, installment_value, source_bank, source_account, description, transaction_date, created_at, updated_at, is_pending_sync)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-    [
-      localId,
+  let rowId = 0;
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `INSERT INTO transactions
+        (local_id, user_id, category_id, subcategory_id, account_id, asset_id, liability_id, objective_id, company_id,
+         type, amount, currency, payment_method, is_fixed, fixed_type, frequency, due_day, reminder_days,
+         installments, installment_value, source_bank, source_account, description, transaction_date, created_at, updated_at, is_pending_sync)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [
+        localId,
+        userId,
+        dto.category_id ?? null,
+        dto.subcategory_id ?? null,
+        dto.account_id ?? null,
+        dto.asset_id ?? null,
+        dto.liability_id ?? null,
+        dto.objective_id ?? null,
+        dto.company_id ?? null,
+        dto.type,
+        dto.amount,
+        dto.currency ?? "COP",
+        dto.payment_method ?? null,
+        dto.is_fixed ? 1 : 0,
+        dto.fixed_type ?? null,
+        dto.frequency ?? null,
+        dto.due_day ?? null,
+        dto.reminder_days ?? null,
+        dto.installments ?? null,
+        dto.installment_value ?? null,
+        dto.source_bank ?? null,
+        dto.source_account ?? null,
+        dto.description ?? null,
+        dto.transaction_date ?? timestamp,
+        timestamp,
+        timestamp,
+      ],
+    );
+    const row = await db.getFirstAsync<{ id: number }>(
+      "SELECT id FROM transactions WHERE local_id = ?",
+      [localId],
+    );
+    rowId = row!.id;
+    await enqueuePendingOperation(localId, "transactions", "CREATE", {
       userId,
-      dto.category_id ?? null,
-      dto.subcategory_id ?? null,
-      dto.account_id ?? null,
-      dto.asset_id ?? null,
-      dto.liability_id ?? null,
-      dto.objective_id ?? null,
-      dto.company_id ?? null,
-      dto.type,
-      dto.amount,
-      dto.currency ?? "COP",
-      dto.payment_method ?? null,
-      dto.is_fixed ? 1 : 0,
-      dto.fixed_type ?? null,
-      dto.frequency ?? null,
-      dto.due_day ?? null,
-      dto.reminder_days ?? null,
-      dto.installments ?? null,
-      dto.installment_value ?? null,
-      dto.source_bank ?? null,
-      dto.source_account ?? null,
-      dto.description ?? null,
-      dto.transaction_date ?? timestamp,
-      timestamp,
-      timestamp,
-    ],
-  );
-  const row = await db.getFirstAsync<{ id: number }>(
-    "SELECT id FROM transactions WHERE local_id = ?",
-    [localId],
-  );
-  await enqueuePendingOperation(localId, "transactions", "CREATE", {
-    userId,
-    ...dto,
-    localId,
+      ...dto,
+      localId,
+    });
   });
   return {
-    id: row!.id,
+    id: rowId,
     user_id: userId,
     category_id: dto.category_id ?? null,
     subcategory_id: dto.subcategory_id ?? null,
@@ -789,34 +855,38 @@ export async function createLocalObjective(
   const db = await getDatabase();
   const localId = generateLocalId();
   const timestamp = now();
-  await db.runAsync(
-    `INSERT INTO financial_objectives
-      (local_id, user_id, name, type, target_amount, current_balance, start_date, end_date, is_completed, created_at, updated_at, is_pending_sync)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)`,
-    [
-      localId,
+  let rowId = 0;
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `INSERT INTO financial_objectives
+        (local_id, user_id, name, type, target_amount, current_balance, start_date, end_date, is_completed, created_at, updated_at, is_pending_sync)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)`,
+      [
+        localId,
+        userId,
+        dto.name,
+        dto.type,
+        dto.target_amount ?? null,
+        dto.current_balance ?? 0,
+        dto.start_date ?? null,
+        dto.end_date ?? null,
+        timestamp,
+        timestamp,
+      ],
+    );
+    const row = await db.getFirstAsync<{ id: number }>(
+      "SELECT id FROM financial_objectives WHERE local_id = ?",
+      [localId],
+    );
+    rowId = row!.id;
+    await enqueuePendingOperation(localId, "financial_objectives", "CREATE", {
       userId,
-      dto.name,
-      dto.type,
-      dto.target_amount ?? null,
-      dto.current_balance ?? 0,
-      dto.start_date ?? null,
-      dto.end_date ?? null,
-      timestamp,
-      timestamp,
-    ],
-  );
-  const row = await db.getFirstAsync<{ id: number }>(
-    "SELECT id FROM financial_objectives WHERE local_id = ?",
-    [localId],
-  );
-  await enqueuePendingOperation(localId, "financial_objectives", "CREATE", {
-    userId,
-    ...dto,
-    localId,
+      ...dto,
+      localId,
+    });
   });
   return {
-    id: row!.id,
+    id: rowId,
     user_id: userId,
     name: dto.name,
     type: dto.type,
@@ -947,22 +1017,26 @@ export async function createLocalCompany(
   const db = await getDatabase();
   const localId = generateLocalId();
   const timestamp = now();
-  await db.runAsync(
-    `INSERT INTO companies (local_id, user_id, name, default_category_id, created_at, updated_at, is_pending_sync)
-     VALUES (?, ?, ?, ?, ?, ?, 1)`,
-    [localId, userId, dto.name, dto.default_category_id ?? null, timestamp, timestamp],
-  );
-  const row = await db.getFirstAsync<{ id: number }>(
-    "SELECT id FROM companies WHERE local_id = ?",
-    [localId],
-  );
-  await enqueuePendingOperation(localId, "companies", "CREATE", {
-    userId,
-    ...dto,
-    localId,
+  let rowId = 0;
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `INSERT INTO companies (local_id, user_id, name, default_category_id, created_at, updated_at, is_pending_sync)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [localId, userId, dto.name, dto.default_category_id ?? null, timestamp, timestamp],
+    );
+    const row = await db.getFirstAsync<{ id: number }>(
+      "SELECT id FROM companies WHERE local_id = ?",
+      [localId],
+    );
+    rowId = row!.id;
+    await enqueuePendingOperation(localId, "companies", "CREATE", {
+      userId,
+      ...dto,
+      localId,
+    });
   });
   return {
-    id: row!.id,
+    id: rowId,
     user_id: userId,
     name: dto.name,
     default_category_id: dto.default_category_id ?? null,

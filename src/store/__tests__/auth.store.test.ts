@@ -13,6 +13,7 @@ import {
   getCachedUser,
   clearCachedUser,
   migrateGuestDataToUser,
+  wipeGuestData,
   GUEST_USER_ID,
 } from "@/database/local.repository";
 import * as SecureStore from "expo-secure-store";
@@ -28,6 +29,7 @@ jest.mock("@/database/local.repository", () => ({
   getCachedUser: jest.fn(),
   clearCachedUser: jest.fn(),
   migrateGuestDataToUser: jest.fn(),
+  wipeGuestData: jest.fn(),
   GUEST_USER_ID: -1,
 }));
 jest.mock("expo-secure-store", () => ({
@@ -44,6 +46,7 @@ const mockClearCachedUser = clearCachedUser as jest.Mock;
 const mockClearTokens = clearTokens as jest.Mock;
 const mockCacheUser = cacheUser as jest.Mock;
 const mockMigrateGuestDataToUser = migrateGuestDataToUser as jest.Mock;
+const mockWipeGuestData = wipeGuestData as jest.Mock;
 const mockSecureStoreGetItem = SecureStore.getItemAsync as jest.Mock;
 const mockSecureStoreDeleteItem = SecureStore.deleteItemAsync as jest.Mock;
 
@@ -284,6 +287,7 @@ describe("logout", () => {
     expect(state.isGuest).toBe(false);
     expect(mockClearCachedUser).toHaveBeenCalled();
     expect(mockSecureStoreDeleteItem).toHaveBeenCalledWith("guest_mode_active_v1");
+    expect(mockWipeGuestData).toHaveBeenCalled();
   });
 
   it("limpia tokens si no hay refreshToken", async () => {
@@ -293,6 +297,33 @@ describe("logout", () => {
 
     await useAuthStore.getState().logout();
 
+    expect(mockClearTokens).toHaveBeenCalled();
+  });
+});
+
+// ─── handleSessionExpired ─────────────────────────────────────────────────────
+
+describe("handleSessionExpired", () => {
+  it("hace wipe de datos de invitado, limpia tokens y deja el error de sesión", async () => {
+    useAuthStore.setState({ isAuthenticated: true, user: mockUser, userId: 1 });
+    mockClearTokens.mockResolvedValueOnce(undefined);
+    mockClearCachedUser.mockResolvedValueOnce(undefined);
+
+    await useAuthStore.getState().handleSessionExpired();
+
+    const state = useAuthStore.getState();
+    expect(mockWipeGuestData).toHaveBeenCalled();
+    expect(mockClearTokens).toHaveBeenCalled();
+    expect(state.isAuthenticated).toBe(false);
+    expect(state.error).toBe("Tu sesión expiró, inicia sesión de nuevo");
+  });
+
+  it("no lanza si el wipe de datos falla", async () => {
+    mockWipeGuestData.mockRejectedValueOnce(new Error("db error"));
+
+    await expect(
+      useAuthStore.getState().handleSessionExpired(),
+    ).resolves.toBeUndefined();
     expect(mockClearTokens).toHaveBeenCalled();
   });
 });
