@@ -35,6 +35,19 @@ if (
   );
 }
 
+// Hard-block de HTTP en release: tokens y credenciales viajarían en claro.
+// El guard de NODE_ENV va primero para que los tests (jest) nunca lleguen a
+// evaluar `__DEV__` aquí (babel-preset-expo no lo inlinea en test).
+if (
+  process.env.NODE_ENV !== "test" &&
+  !__DEV__ &&
+  !API_BASE_URL.startsWith("https://")
+) {
+  throw new Error(
+    "[Security] API_BASE_URL debe usar HTTPS fuera de desarrollo. Reconfigura .env antes de compilar release.",
+  );
+}
+
 const TOKEN_KEY = "access_token";
 const REFRESH_TOKEN_KEY = "refresh_token";
 
@@ -58,6 +71,13 @@ export function isSessionExpiredError(err: unknown): err is SessionExpiredError 
 // Evita emitir el evento de sesión expirada más de una vez cuando varias
 // peticiones en paralelo reciben 401 casi simultáneamente.
 let sessionExpiredEmitted = false;
+
+// Single-flight del refresh de tokens: cuando N peticiones en paralelo
+// reciben 401 casi al mismo tiempo, todas esperan la MISMA promesa de
+// POST /auth/refresh en vez de disparar N refreshes con el mismo
+// refresh_token — con rotación de tokens, el primer refresh invalida el
+// token que los demás iban a usar y el resto de la sesión sana se corta.
+let refreshPromise: Promise<string> | null = null;
 
 // Refresh proactivo: el access token dura ~15 min y el refresh ~1h. En vez de
 // esperar a que una petición falle con 401 (lo que el usuario ve como un
@@ -83,18 +103,43 @@ function scheduleProactiveRefresh(expiresInSeconds: number): void {
   }, delayMs);
 }
 
-async function proactiveRefresh(): Promise<void> {
-  try {
+/**
+ * Renueva el access_token reutilizando (o creando) la petición de refresh en
+ * curso. Devuelve el nuevo access_token; al fallar SIEMPRE rechaza. Quien
+ * llama decide qué hacer con el fallo: el 401 reactivo limpia tokens y emite
+ * `sessionExpired`; el refresh proactivo solo espera/ignora.
+ */
+function getAccessTokenAfterRefresh(): Promise<string> {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
     const refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
-    if (!refreshToken) return;
+    if (!refreshToken) throw new SessionExpiredError();
 
     const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
       refresh_token: refreshToken,
     });
-    const token = unwrapEnvelope<
+    const {
+      access_token,
+      refresh_token: newRefresh,
+      expires_in,
+    } = unwrapEnvelope<
       { access_token: string; refresh_token: string; expires_in?: number }[]
     >(response.data)[0];
-    await saveTokens(token.access_token, token.refresh_token, token.expires_in);
+    await saveTokens(access_token, newRefresh, expires_in);
+    return access_token;
+  })().finally(() => {
+    refreshPromise = null;
+  });
+
+  return refreshPromise;
+}
+
+async function proactiveRefresh(): Promise<void> {
+  try {
+    // Comparte el mutex single-flight: si ya hay un POST /auth/refresh en
+    // curso (reactivo), se espera en vez de duplicarlo con el mismo token.
+    await getAccessTokenAfterRefresh();
   } catch {
     // Un refresh proactivo que falla (ej. blip de red en background) NO debe
     // forzar logout — sólo el 401 reactivo real (que prueba que el backend
@@ -275,11 +320,16 @@ apiClient.interceptors.response.use(
       status: error.response?.status,
     });
 
-    // Los endpoints de auth (login/encrypt) nunca tienen una "sesión" que
-    // pueda expirar todavía — un 401 ahí es credenciales inválidas, no
-    // expiración. Dejar pasar el error tal cual para que login() lo maneje.
+    // Los endpoints de auth (login/encrypt/refresh) nunca tienen una "sesión"
+    // que pueda expirar todavía — un 401 ahí es credenciales inválidas (o un
+    // refresh cuyo token ya rotó), no expiración. Dejar pasar el error tal
+    // cual. Excluir /auth/refresh evita que auth.api.refresh() (que sí pasa
+    // por apiClient) re-entre al interceptor y recursione.
     const url: string = originalRequest?.url ?? "";
-    const isAuthEndpoint = url.includes("/auth/login") || url.includes("/auth/encrypt");
+    const isAuthEndpoint =
+      url.includes("/auth/login") ||
+      url.includes("/auth/encrypt") ||
+      url.includes("/auth/refresh");
 
     if (
       error.response?.status === 401 &&
@@ -289,36 +339,16 @@ apiClient.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        const refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
-        if (!refreshToken) {
-          await clearTokens();
-          if (!sessionExpiredEmitted) {
-            sessionExpiredEmitted = true;
-            emitSessionExpired();
-          }
-          throw new SessionExpiredError();
-        }
-
-        const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-          refresh_token: refreshToken,
-        });
-
-        const {
-          access_token,
-          refresh_token: newRefresh,
-          expires_in,
-        } = unwrapEnvelope<
-          { access_token: string; refresh_token: string; expires_in?: number }[]
-        >(response.data)[0];
-        await saveTokens(access_token, newRefresh, expires_in);
-
-        originalRequest.headers["Authorization"] = `Bearer ${access_token}`;
+        const accessToken = await getAccessTokenAfterRefresh();
+        originalRequest.headers["Authorization"] = `Bearer ${accessToken}`;
         return apiClient(originalRequest);
-      } catch (refreshErr) {
-        if (isSessionExpiredError(refreshErr)) throw refreshErr;
-        await clearTokens();
+      } catch {
+        // El refresh compartido ya rechazó: N requests 401 en paralelo caen
+        // acá, pero clearTokens + emitSessionExpired corren una sola vez
+        // (guard por sessionExpiredEmitted).
         if (!sessionExpiredEmitted) {
           sessionExpiredEmitted = true;
+          await clearTokens();
           emitSessionExpired();
         }
         throw new SessionExpiredError();
