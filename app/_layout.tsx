@@ -1,7 +1,7 @@
 import "../global.css";
 import { useEffect, useRef } from "react";
 import { View } from "react-native";
-import { Stack, router } from "expo-router";
+import { Stack, router, useRootNavigationState } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
 import {
@@ -37,15 +37,22 @@ function RootLayoutInner() {
   const { resolvedScheme } = useAppTheme();
   const wasAuthenticated = useRef(isAuthenticated);
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntentContext();
+  const rootNavigationState = useRootNavigationState();
 
   // Redirige a login cuando la sesión pasa de autenticada a no-autenticada
   // (expiración irrecuperable o logout), no en el montaje inicial.
+  // Guard: no llamar a router.replace hasta que el Stack/NavigationContainer
+  // esté montado (rootNavigationState.key listo); si el guard corta temprano,
+  // NO se actualiza wasAuthenticated.current para que la transición true->false
+  // ocurrida mientras el navigator no estaba listo se detecte igual cuando
+  // rootNavigationState.key cambie y el efecto reevalúe.
   useEffect(() => {
+    if (!rootNavigationState?.key) return;
     if (wasAuthenticated.current && !isAuthenticated) {
       router.replace("/(auth)/login");
     }
     wasAuthenticated.current = isAuthenticated;
-  }, [isAuthenticated]);
+  }, [isAuthenticated, rootNavigationState?.key]);
 
   const [fontsLoaded] = useFonts({
     "SpaceGrotesk-Medium": SpaceGrotesk_500Medium,
@@ -87,12 +94,31 @@ function RootLayoutInner() {
   // manualmente vía share sheet nativo, ver memory/share-transaction-decision.md).
   // Solo interesa `shareIntent.text` — imágenes/archivos no están habilitados
   // en el plugin (androidIntentFilters: ["text/*"]).
+  // Guard: igual que el redirect de sesión expirada más arriba, no navegar
+  // hasta que el Stack/NavigationContainer esté listo (rootNavigationState.key)
+  // — un share intent puede llegar en cold start antes de que exista contexto
+  // de navegación, y `router.push` ahí revienta con "Couldn't find a
+  // navigation context". No se limpia `shareIntent` (no se llama
+  // resetShareIntent) hasta que el guard pasa, así el efecto simplemente
+  // reintenta cuando `rootNavigationState.key` cambie sin perder el intent.
   useEffect(() => {
-    if (!hasShareIntent || !shareIntent?.text || !isAuthenticated) return;
+    if (
+      !hasShareIntent ||
+      !shareIntent?.text ||
+      !isAuthenticated ||
+      !rootNavigationState?.key
+    )
+      return;
     const text = shareIntent.text;
     resetShareIntent();
     router.push({ pathname: "/shared-transaction", params: { text } });
-  }, [hasShareIntent, shareIntent, isAuthenticated, resetShareIntent]);
+  }, [
+    hasShareIntent,
+    shareIntent,
+    isAuthenticated,
+    resetShareIntent,
+    rootNavigationState?.key,
+  ]);
 
   if (!fontsLoaded) {
     return null;
