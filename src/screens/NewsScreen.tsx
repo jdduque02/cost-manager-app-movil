@@ -1,4 +1,5 @@
-import { View, Text, ScrollView, Pressable, RefreshControl } from "react-native";
+import { View, Text, ScrollView, RefreshControl } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useOfflineQuery } from "@/hooks/useOfflineQuery";
 import * as newsApi from "@/api/news.api";
 import { Card } from "@/components/ui/Card";
@@ -26,6 +27,7 @@ function formatDate(dateStr: string): string {
 }
 
 export default function NewsScreen() {
+  const insets = useSafeAreaInsets();
   const { data: news, isLoading, refetch } = useOfflineQuery<NewsItem[]>(
     {
       queryKey: ["news"],
@@ -36,7 +38,7 @@ export default function NewsScreen() {
 
   if (isLoading) {
     return (
-      <View className="flex-1 bg-background px-4 pt-6 gap-3">
+      <View className="flex-1 bg-background px-4 pt-6 gap-3" style={{ paddingTop: insets.top + 24 }}>
         <Skeleton width={150} height={28} />
         <Skeleton height={120} />
         <Skeleton height={120} />
@@ -48,6 +50,7 @@ export default function NewsScreen() {
   return (
     <ScrollView
       className="flex-1 bg-background"
+      style={{ paddingTop: insets.top }}
       refreshControl={<RefreshControl refreshing={false} onRefresh={refetch} />}
     >
       <View className="px-4 pt-4 pb-4">
@@ -63,7 +66,7 @@ export default function NewsScreen() {
       ) : (
         <View className="px-4 pb-6 gap-3">
           {(news ?? []).map((item) => (
-            <Pressable key={item.id}>
+            <View key={item.id}>
               <Card>
                 <View className="flex-row justify-between items-start mb-2">
                   {item.category && (
@@ -80,7 +83,7 @@ export default function NewsScreen() {
                   {item.summary}
                 </Text>
               </Card>
-            </Pressable>
+            </View>
           ))}
         </View>
       )}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore } from "@/store/auth.store";
 import { useOfflineQuery } from "@/hooks/useOfflineQuery";
 import { apiClient } from "@/api/client";
@@ -12,14 +13,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { IconTile } from "@/components/ui/IconTile";
 import { Shield, TrendingUp, GraduationCap, Rocket, House, Sunset, type LucideIcon } from "@/components/ui/icons";
 import { PROFILE_BUCKET_LABELS, type ProfileBucket } from "@/types/catalog.types";
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
+import { formatCurrency } from "@/utils/format";
 
 interface TaxSummary {
   fiscal_year: number;
@@ -92,6 +86,7 @@ const LIFE_STAGES: { stage: string; icon: LucideIcon; tips: string[] }[] = [
 
 export default function IntelligenceScreen() {
   const userId = useAuthStore((s) => s.userId);
+  const insets = useSafeAreaInsets();
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
 
@@ -202,7 +197,7 @@ export default function IntelligenceScreen() {
 
   if (isLoading) {
     return (
-      <View className="flex-1 bg-background px-4 pt-6 gap-3">
+      <View className="flex-1 bg-background px-4 pt-6 gap-3" style={{ paddingTop: insets.top + 24 }}>
         <Skeleton width={200} height={28} />
         <Skeleton height={120} />
         <Skeleton height={120} />
@@ -213,7 +208,7 @@ export default function IntelligenceScreen() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-background">
+    <ScrollView className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
       <View className="px-4 pt-4 gap-7 pb-6">
         <PageHeader title="Inteligencia" subtitle="Resumen financiero y fiscal" />
 

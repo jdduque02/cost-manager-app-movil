@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, RefreshControl, Modal, Pressable, Alert } from "react-native";
 import { useState, useCallback, useEffect } from "react";
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useReducedMotion, EASE_STANDARD } from "@/utils/animations";
 import { useLocalSearchParams, router } from "expo-router";
@@ -19,18 +20,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ArrowLeft, Search, PiggyBank } from "@/components/ui/icons";
 import { toast } from "@/utils/toast";
+import { formatCurrency } from "@/utils/format";
 import type {
   FinancialObjectiveResponse,
   ObjectivePaymentResponse,
 } from "@/types/objective.types";
-
-function formatCOP(amount: number): string {
-  return new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
 
 function ProgressBar({ value, total }: { value: number; total: number }) {
   const pct = total > 0 ? Math.min((value / total) * 100, 100) : 0;
@@ -57,8 +51,9 @@ function ProgressBar({ value, total }: { value: number; total: number }) {
 }
 
 function DetailSkeleton() {
+  const insets = useSafeAreaInsets();
   return (
-    <ScrollView className="flex-1 bg-background">
+    <ScrollView className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
       <View className="p-4 gap-4">
         <Skeleton width="100%" height={160} borderRadius={16} />
         <Skeleton width="100%" height={120} borderRadius={12} />
@@ -76,6 +71,7 @@ export default function ObjectiveDetailScreen() {
   const queryClient = useQueryClient();
   const isOnline = useOfflineStore((s) => s.isOnline);
   const { resolvedScheme } = useAppTheme();
+  const insets = useSafeAreaInsets();
 
   const [showPayModal, setShowPayModal] = useState(false);
   const [payAmount, setPayAmount] = useState("");
@@ -153,7 +149,7 @@ export default function ObjectiveDetailScreen() {
     // monto antes de enviar (ver hallazgo H6.1 de la auditoría de sept/2026).
     Alert.alert(
       "Confirmar pago",
-      `¿Registrar un pago de ${formatCOP(amount)} en "${objective?.name}"? Esta acción no se puede deshacer.`,
+      `¿Registrar un pago de ${formatCurrency(amount)} en "${objective?.name}"? Esta acción no se puede deshacer.`,
       [
         { text: "Cancelar", style: "cancel" },
         {
@@ -168,7 +164,7 @@ export default function ObjectiveDetailScreen() {
 
   if (!objective) {
     return (
-      <View className="flex-1 bg-background justify-center items-center px-4">
+      <View className="flex-1 bg-background justify-center items-center px-4" style={{ paddingTop: insets.top }}>
         <EmptyState
           icon={Search}
           title="Objetivo no encontrado"
@@ -195,6 +191,7 @@ export default function ObjectiveDetailScreen() {
   return (
     <ScrollView
       className="flex-1 bg-background"
+      style={{ paddingTop: insets.top }}
       refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetchAll} />}
     >
       <View className="px-4 pt-4 pb-2 flex-row items-center gap-3">
@@ -217,10 +214,10 @@ export default function ObjectiveDetailScreen() {
 
         <View className="flex-row items-baseline mb-3">
           <Text className="text-3xl font-num-semibold text-foreground">
-            {formatCOP(Number(objective.current_balance))}
+            {formatCurrency(Number(objective.current_balance))}
           </Text>
           <Text className="text-muted-foreground font-sans ml-1"> / </Text>
-          <Text className="text-lg font-sans text-muted-foreground">{formatCOP(target)}</Text>
+          <Text className="text-lg font-sans text-muted-foreground">{formatCurrency(target)}</Text>
         </View>
 
         <ProgressBar value={Number(objective.current_balance)} total={target} />
@@ -235,14 +232,14 @@ export default function ObjectiveDetailScreen() {
         <Text className="text-sm font-sans-bold text-foreground mb-3">Detalles del progreso</Text>
         <View className="gap-2">
           {[
-            { label: "Monto restante", value: formatCOP(remaining), tone: "warning" as const },
+            { label: "Monto restante", value: formatCurrency(remaining), tone: "warning" as const },
             {
               label: "Fecha objetivo",
               value: targetDate ? targetDate.toLocaleDateString("es-CO") : "Sin definir",
               tone: "muted" as const,
             },
             { label: "Días restantes", value: `${daysLeft} días`, tone: "muted" as const },
-            { label: "Cuota mensual sugerida", value: formatCOP(monthlyNeeded), tone: "primary" as const },
+            { label: "Cuota mensual sugerida", value: formatCurrency(monthlyNeeded), tone: "primary" as const },
           ].map(({ label, value, tone }) => (
             <View
               key={label}
@@ -272,7 +269,7 @@ export default function ObjectiveDetailScreen() {
             >
               <View className="flex-1">
                 <Text className="text-sm font-sans-semibold text-foreground">
-                  {formatCOP(Number(payment.amount))}
+                  {formatCurrency(Number(payment.amount))}
                 </Text>
                 {payment.note && (
                   <Text className="text-xs font-sans text-muted-foreground mt-0.5">
