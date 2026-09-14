@@ -4,7 +4,6 @@ import {
   FlatList,
   RefreshControl,
   Modal,
-  Alert,
   ScrollView,
   Pressable,
 } from "react-native";
@@ -31,13 +30,15 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { AnimatedListItem } from "@/components/ui/AnimatedListItem";
 import { Money } from "@/components/ui/Money";
 import { Chip } from "@/components/ui/Chip";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { StaleDataBanner } from "@/components/StaleDataBanner";
-import { Target, Plus } from "@/components/ui/icons";
+import { Target, Plus, Pencil } from "@/components/ui/icons";
 import { toast } from "@/utils/toast";
 import { formatCurrency } from "@/utils/format";
 import type {
   CreateFinancialObjectiveDto,
   FinancialObjectiveType,
+  FinancialObjectiveResponse,
 } from "@/types/objective.types";
 
 const OBJECTIVE_TYPES: FinancialObjectiveType[] = ["savings", "goal", "loan", "emergency_fund"];
@@ -99,23 +100,36 @@ function ListSkeleton() {
   );
 }
 
-export default function ObjectivesScreen() {
-  const userId = useAuthStore((s) => s.userId);
-  const queryClient = useQueryClient();
-  const isOnline = useOfflineStore((s) => s.isOnline);
-  const { createObjective: createOffline, deleteObjective: deleteOffline } =
-    useOfflineMutations();
-  const { resolvedScheme } = useAppTheme();
-
-  const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState<CreateFinancialObjectiveDto>(() => ({
+function defaultForm(): CreateFinancialObjectiveDto {
+  return {
     name: "",
     type: "savings",
     target_amount: 0,
     end_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
       .toISOString()
       .split("T")[0],
-  }));
+  };
+}
+
+export default function ObjectivesScreen() {
+  const userId = useAuthStore((s) => s.userId);
+  const queryClient = useQueryClient();
+  const isOnline = useOfflineStore((s) => s.isOnline);
+  const {
+    createObjective: createOffline,
+    updateObjective: updateOffline,
+    deleteObjective: deleteOffline,
+  } = useOfflineMutations();
+  const { resolvedScheme } = useAppTheme();
+
+  const [showModal, setShowModal] = useState(false);
+  const [editingObjective, setEditingObjective] = useState<FinancialObjectiveResponse | null>(
+    null,
+  );
+  const [deletingObjective, setDeletingObjective] = useState<FinancialObjectiveResponse | null>(
+    null,
+  );
+  const [form, setForm] = useState<CreateFinancialObjectiveDto>(defaultForm);
 
   const {
     data: objectives,
@@ -136,18 +150,28 @@ export default function ObjectivesScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["objectives", userId] });
       setShowModal(false);
-      setForm({
-        name: "",
-        type: "savings",
-        target_amount: 0,
-        end_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
-          .toISOString()
-          .split("T")[0],
-      });
+      setForm(defaultForm());
       toast.success("Objetivo creado");
     },
     onError: (err: unknown) => {
       toast.error("Error al crear objetivo", err instanceof Error ? err.message : undefined);
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (dto: CreateFinancialObjectiveDto) => {
+      if (!editingObjective) return Promise.reject(new Error("Objetivo no seleccionado"));
+      return updateOffline(editingObjective.id, dto);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["objectives", userId] });
+      setShowModal(false);
+      setEditingObjective(null);
+      setForm(defaultForm());
+      toast.success("Objetivo actualizado");
+    },
+    onError: (err: unknown) => {
+      toast.error("Error al actualizar objetivo", err instanceof Error ? err.message : undefined);
     },
   });
 
@@ -158,26 +182,52 @@ export default function ObjectivesScreen() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["objectives", userId] });
+      setDeletingObjective(null);
       toast.success("Objetivo eliminado");
     },
     onError: (err: unknown) => {
+      setDeletingObjective(null);
       toast.error("Error al eliminar", err instanceof Error ? err.message : undefined);
     },
   });
 
-  function handleCreate() {
+  function handleSubmit() {
     if (!form.name.trim() || !form.target_amount || !form.end_date) {
       toast.error("Campos requeridos", "Nombre, monto y fecha son obligatorios");
       return;
     }
-    createMutation.mutate(form);
+    if (editingObjective) {
+      updateMutation.mutate(form);
+    } else {
+      createMutation.mutate(form);
+    }
   }
 
-  function confirmDelete(id: number, name: string) {
-    Alert.alert("Eliminar objetivo", `¿Eliminar "${name}"?`, [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Eliminar", style: "destructive", onPress: () => deleteMutation.mutate(id) },
-    ]);
+  function openCreateModal() {
+    setEditingObjective(null);
+    setForm(defaultForm());
+    setShowModal(true);
+  }
+
+  function openEditModal(item: FinancialObjectiveResponse) {
+    setEditingObjective(item);
+    setForm({
+      name: item.name,
+      type: item.type,
+      target_amount: item.target_amount ?? 0,
+      end_date: item.end_date ?? defaultForm().end_date,
+    });
+    setShowModal(true);
+  }
+
+  function closeModal() {
+    setShowModal(false);
+    setEditingObjective(null);
+    setForm(defaultForm());
+  }
+
+  function confirmDelete(item: FinancialObjectiveResponse) {
+    setDeletingObjective(item);
   }
 
   const completed = (objectives ?? []).filter((o) => o.is_completed).length;
@@ -238,7 +288,7 @@ export default function ObjectivesScreen() {
 
             <View className="flex-row justify-between items-center px-4 mt-6 mb-3">
               <Text className="text-lg font-display text-foreground">Objetivos financieros</Text>
-              <Button size="sm" onPress={() => setShowModal(true)}>
+              <Button size="sm" onPress={openCreateModal}>
                 <Plus size={16} color={PALETTE[resolvedScheme].primaryForeground} />
                 <Text className="text-sm font-sans-medium text-primary-foreground">Nuevo</Text>
               </Button>
@@ -254,12 +304,23 @@ export default function ObjectivesScreen() {
             <AnimatedListItem index={index} className="mx-4 mb-3">
               <Pressable
                 onPress={() => router.push(`/objectives/${item.id}` as never)}
-                onLongPress={() => confirmDelete(item.id, item.name)}
+                onLongPress={() => confirmDelete(item)}
               >
                 <Card>
                   <View className="flex-row justify-between items-start mb-1">
                     <Text className="text-base font-display text-foreground flex-1">{item.name}</Text>
-                    {item.is_completed && <Badge tone="success">Completado</Badge>}
+                    <View className="flex-row items-center gap-2">
+                      {!item.is_completed && (
+                        <Pressable
+                          hitSlop={8}
+                          onPress={() => openEditModal(item)}
+                          accessibilityLabel={`Editar ${item.name}`}
+                        >
+                          <Pencil size={16} color={PALETTE[resolvedScheme].mutedForeground} />
+                        </Pressable>
+                      )}
+                      {item.is_completed && <Badge tone="success">Completado</Badge>}
+                    </View>
                   </View>
 
                   <View className="flex-row items-center mb-2">
@@ -304,7 +365,7 @@ export default function ObjectivesScreen() {
                 title="Sin objetivos"
                 description="Crea tu primer objetivo financiero para empezar a ahorrar"
                 action={
-                  <Button variant="outline" size="sm" onPress={() => setShowModal(true)}>
+                  <Button variant="outline" size="sm" onPress={openCreateModal}>
                     Crear objetivo
                   </Button>
                 }
@@ -314,17 +375,17 @@ export default function ObjectivesScreen() {
         }
       />
 
-      {/* Create Objective Modal */}
+      {/* Create/Edit Objective Modal */}
       <Modal
         visible={showModal}
         animationType="slide"
         transparent
-        onRequestClose={() => setShowModal(false)}
+        onRequestClose={closeModal}
       >
         <View className="flex-1 bg-black/40 justify-end">
           <View className="bg-card rounded-t-3xl p-6 max-h-[85%]">
             <Text className="text-lg font-display text-foreground mb-5">
-              Nuevo objetivo financiero
+              {editingObjective ? "Editar objetivo financiero" : "Nuevo objetivo financiero"}
             </Text>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Input
@@ -363,10 +424,14 @@ export default function ObjectivesScreen() {
               />
 
               <View className="flex-row gap-3 mt-2 mb-4">
-                <Button variant="outline" className="flex-1" onPress={() => setShowModal(false)}>
+                <Button variant="outline" className="flex-1" onPress={closeModal}>
                   Cancelar
                 </Button>
-                <Button className="flex-1" loading={createMutation.isPending} onPress={handleCreate}>
+                <Button
+                  className="flex-1"
+                  loading={createMutation.isPending || updateMutation.isPending}
+                  onPress={handleSubmit}
+                >
                   Guardar
                 </Button>
               </View>
@@ -374,6 +439,17 @@ export default function ObjectivesScreen() {
           </View>
         </View>
       </Modal>
+
+      <ConfirmModal
+        visible={!!deletingObjective}
+        title="Eliminar objetivo"
+        description={`¿Eliminar "${deletingObjective?.name}"?`}
+        confirmLabel="Eliminar"
+        tone="destructive"
+        loading={deleteMutation.isPending}
+        onConfirm={() => deletingObjective && deleteMutation.mutate(deletingObjective.id)}
+        onCancel={() => setDeletingObjective(null)}
+      />
     </View>
   );
 }

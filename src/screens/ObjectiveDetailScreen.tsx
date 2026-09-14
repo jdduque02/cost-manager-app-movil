@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, RefreshControl, Modal, Pressable, Alert } from "react-native";
+import { View, Text, ScrollView, RefreshControl, Modal, Pressable } from "react-native";
 import { useState, useCallback, useEffect } from "react";
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/Input";
 import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { ArrowLeft, Search, PiggyBank } from "@/components/ui/icons";
 import { toast } from "@/utils/toast";
 import { formatCurrency } from "@/utils/format";
@@ -76,6 +77,7 @@ export default function ObjectiveDetailScreen() {
   const [showPayModal, setShowPayModal] = useState(false);
   const [payAmount, setPayAmount] = useState("");
   const [payNotes, setPayNotes] = useState("");
+  const [showConfirmPay, setShowConfirmPay] = useState(false);
 
   const {
     data: objective,
@@ -119,11 +121,14 @@ export default function ObjectiveDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ["objective-payments", userId, objectiveId] });
       queryClient.invalidateQueries({ queryKey: ["objectives", userId] });
       setShowPayModal(false);
+      setShowConfirmPay(false);
       setPayAmount("");
       setPayNotes("");
       toast.success("Pago registrado");
     },
     onError: (err: unknown) => {
+      setShowConfirmPay(false);
+      setShowPayModal(true);
       toast.error("Error al registrar pago", err instanceof Error ? err.message : undefined);
     },
   });
@@ -147,17 +152,20 @@ export default function ObjectiveDetailScreen() {
     // desde la app (ni endpoint ni UI) — un monto mal tecleado queda
     // permanente contra `current_balance`. Se confirma explícitamente el
     // monto antes de enviar (ver hallazgo H6.1 de la auditoría de sept/2026).
-    Alert.alert(
-      "Confirmar pago",
-      `¿Registrar un pago de ${formatCurrency(amount)} en "${objective?.name}"? Esta acción no se puede deshacer.`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Confirmar",
-          onPress: () => payMutation.mutate({ amount, note: payNotes || undefined }),
-        },
-      ],
-    );
+    // El modal de monto se oculta mientras se confirma para no apilar dos
+    // hojas con botones "Confirmar"/"Cancelar" superpuestos.
+    setShowPayModal(false);
+    setShowConfirmPay(true);
+  }
+
+  function handleConfirmPay() {
+    const amount = parseFloat(payAmount);
+    payMutation.mutate({ amount, note: payNotes || undefined });
+  }
+
+  function handleCancelConfirmPay() {
+    setShowConfirmPay(false);
+    setShowPayModal(true);
   }
 
   if (isLoading) return <DetailSkeleton />;
@@ -314,6 +322,7 @@ export default function ObjectiveDetailScreen() {
           <View className="bg-card rounded-t-3xl p-6 max-h-[60%]">
             <Text className="text-lg font-display text-foreground mb-5">Registrar pago</Text>
             <CurrencyInput
+              testID="pay-amount-input"
               label="Monto a pagar"
               value={payAmount}
               onChangeValue={setPayAmount}
@@ -336,6 +345,17 @@ export default function ObjectiveDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      <ConfirmModal
+        visible={showConfirmPay}
+        title="Confirmar pago"
+        description={`¿Registrar un pago de ${formatCurrency(parseFloat(payAmount) || 0)} en "${objective?.name}"? Esta acción no se puede deshacer.`}
+        confirmLabel="Sí, registrar pago"
+        cancelLabel="Volver"
+        loading={payMutation.isPending}
+        onConfirm={handleConfirmPay}
+        onCancel={handleCancelConfirmPay}
+      />
     </ScrollView>
   );
 }

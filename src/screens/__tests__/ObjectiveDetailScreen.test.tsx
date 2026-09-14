@@ -3,21 +3,27 @@
  *
  * Foco: la fila condicional "Meses de gastos cubiertos" en la sección
  * "Detalles del progreso" (type guard `.filter` sobre entradas potencialmente
- * null antes del `.map`). Mockea `useOfflineQuery` directamente (con datos ya
- * resueltos) para no depender de red/SQLite real, y expo-router/stores para
- * poder renderizar la pantalla de forma aislada.
+ * null antes del `.map`); y el flujo de confirmación de pago vía
+ * `ConfirmModal` (ya no `Alert.alert`). Mockea `useOfflineQuery` directamente
+ * (con datos ya resueltos) para no depender de red/SQLite real, y
+ * expo-router/stores para poder renderizar la pantalla de forma aislada.
  */
 import React from "react";
-import { render, screen } from "@testing-library/react-native";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ObjectiveDetailScreen from "../ObjectiveDetailScreen";
 import { useOfflineQuery } from "@/hooks/useOfflineQuery";
 import { useAuthStore } from "@/store/auth.store";
 import { useOfflineStore } from "@/store/offline.store";
+import * as objectivesApi from "@/api/objectives.api";
 import type { FinancialObjectiveResponse } from "@/types/objective.types";
 
 jest.mock("@/hooks/useOfflineQuery", () => ({
   useOfflineQuery: jest.fn(),
+}));
+
+jest.mock("@/api/objectives.api", () => ({
+  createObjectivePayment: jest.fn(),
 }));
 
 jest.mock("@/store/auth.store", () => ({
@@ -92,8 +98,18 @@ function renderScreen(objective: FinancialObjectiveResponse | null) {
   );
 }
 
+const mockCreateObjectivePayment = objectivesApi.createObjectivePayment as jest.Mock;
+
 beforeEach(() => {
   jest.clearAllMocks();
+  mockCreateObjectivePayment.mockResolvedValue({
+    id: 1,
+    objective_id: 1,
+    user_id: 5,
+    amount: 100000,
+    payment_date: "2026-09-13",
+    created_at: "2026-09-13T00:00:00Z",
+  });
   mockUseAuthStore.mockImplementation(
     (selector?: (s: { userId: number }) => unknown) => {
       const state = { userId: 5 };
@@ -132,5 +148,48 @@ describe("ObjectiveDetailScreen — fila 'Meses de gastos cubiertos'", () => {
     );
 
     expect(screen.queryByText("Meses de gastos cubiertos")).toBeNull();
+  });
+});
+
+describe("ObjectiveDetailScreen — confirmar pago vía ConfirmModal", () => {
+  it("abre el ConfirmModal al registrar el monto y confirma el pago", async () => {
+    renderScreen(baseObjective({ current_balance: 1250000, target_amount: 5000000 }));
+
+    fireEvent.press(screen.getByText("Registrar pago"));
+
+    const amountInput = screen.getByTestId("pay-amount-input");
+    fireEvent.changeText(amountInput, "100000");
+
+    fireEvent.press(screen.getByText("Confirmar"));
+
+    expect(screen.getByText("Confirmar pago")).toBeTruthy();
+    expect(screen.getByText(/no se puede deshacer/)).toBeTruthy();
+
+    fireEvent.press(screen.getByText("Sí, registrar pago"));
+
+    await waitFor(() =>
+      expect(mockCreateObjectivePayment).toHaveBeenCalledWith(
+        5,
+        1,
+        100000,
+        expect.any(String),
+        undefined,
+      ),
+    );
+  });
+
+  it("cierra el ConfirmModal sin registrar el pago al cancelar", () => {
+    renderScreen(baseObjective({ current_balance: 1250000, target_amount: 5000000 }));
+
+    fireEvent.press(screen.getByText("Registrar pago"));
+    fireEvent.changeText(screen.getByTestId("pay-amount-input"), "100000");
+    fireEvent.press(screen.getByText("Confirmar"));
+
+    expect(screen.getByText("Confirmar pago")).toBeTruthy();
+
+    fireEvent.press(screen.getByText("Volver"));
+
+    expect(screen.queryByText(/no se puede deshacer/)).toBeNull();
+    expect(mockCreateObjectivePayment).not.toHaveBeenCalled();
   });
 });
