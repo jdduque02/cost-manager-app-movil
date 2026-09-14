@@ -92,4 +92,4 @@ src/
 | `GET /user/:id/financial-profile`            | Perfil                    |
 
 # correr el back por un tunel
-C:\Users\jdduq\AppData\Local\ngrok-cli\ngrok.exe" http 3000
+"C:\Users\jdduq\AppData\Local\ngrok-cli\ngrok.exe" http 3000
