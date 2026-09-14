@@ -7,6 +7,12 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/utils/toast";
+import {
+  sanitizeInput,
+  validateEmail,
+  validatePassword,
+  validateUsername,
+} from "@/utils/security";
 
 export default function RegisterScreen() {
   const [fullName, setFullName] = useState("");
@@ -18,8 +24,29 @@ export default function RegisterScreen() {
   const [error, setError] = useState<string | null>(null);
 
   async function handleRegister() {
+    if (isLoading) return;
+
     if (!fullName || !email || !username || !password) {
       toast.error("Campos requeridos", "Completa todos los campos");
+      return;
+    }
+
+    const cleanEmail = sanitizeInput(email);
+    if (!validateEmail(cleanEmail)) {
+      toast.error("Email invalido", "Ingresa un correo electronico valido");
+      return;
+    }
+
+    const cleanUsername = sanitizeInput(username);
+    const usernameCheck = validateUsername(cleanUsername);
+    if (!usernameCheck.valid) {
+      toast.error("Usuario invalido", usernameCheck.message);
+      return;
+    }
+
+    const passwordCheck = validatePassword(password);
+    if (!passwordCheck.valid) {
+      toast.error("Contrasena invalida", passwordCheck.message);
       return;
     }
 
@@ -28,17 +55,12 @@ export default function RegisterScreen() {
       return;
     }
 
-    if (password.length < 8) {
-      toast.error("La contrasena debe tener al menos 8 caracteres");
-      return;
-    }
-
     try {
       setError(null);
       setIsLoading(true);
       await usersApi.createUser({
-        username,
-        email,
+        username: cleanUsername,
+        email: cleanEmail,
         password,
         full_name: fullName,
         locale: "es",

@@ -86,7 +86,10 @@ export default function LoginScreen() {
       await clearLoginAttempts();
       router.replace("/(tabs)");
     } catch (err) {
-      console.error("[Login] attempt failed:", err);
+      console.error(
+        "[Login] attempt failed:",
+        err instanceof Error ? err.message : String(err),
+      );
       await recordLoginFailure();
       const newCheck = await checkLoginRateLimit();
       if (!newCheck.allowed && newCheck.retryAfterSeconds) {

@@ -1,4 +1,4 @@
-import { Tabs, router, usePathname } from "expo-router";
+import { Tabs, Redirect, router, usePathname } from "expo-router";
 import { View, useWindowDimensions, type ColorValue } from "react-native";
 import { useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,6 +12,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { useAppTheme } from "@/components/ThemeProvider";
+import { useAuthStore } from "@/store/auth.store";
 import { PALETTE } from "@/theme/palette";
 import {
   SPRING_SPRIG,
@@ -93,6 +94,8 @@ export default function TabsLayout() {
   const currentTabIndex = TAB_PATHS.indexOf(pathname);
   const { width: screenWidth } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isLoading = useAuthStore((state) => state.isLoading);
 
   const tabBarHeight = 56 + insets.bottom;
   const segmentWidth = screenWidth / tabs.length;
@@ -141,6 +144,14 @@ export default function TabsLayout() {
         runOnJS(navigateToTab)(currentTabIndex - 1);
       }
     });
+
+  // Guard de rutas: un usuario sin sesión (y sin invitado activo) no debe
+  // ver los tabs aunque entre por deep-link directo. Durante isLoading se
+  // deja renderizar para que `initialize()` termine de restaurar la sesión —
+  // el modo invitado entra con isAuthenticated: true, así que no se bloquea.
+  if (!isLoading && !isAuthenticated) {
+    return <Redirect href="/(auth)/login" />;
+  }
 
   return (
     <View style={{ flex: 1 }}>
