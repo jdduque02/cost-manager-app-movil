@@ -2,7 +2,7 @@ import { View, Text } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import RNToast, { type ToastConfig, type ToastConfigParams } from "react-native-toast-message";
 import { useAppTheme } from "@/components/ThemeProvider";
-import { PALETTE } from "@/theme/palette";
+import { PALETTE, alpha } from "@/theme/palette";
 import { CircleCheck, CircleX, Info, TriangleAlert, type LucideIcon } from "./icons";
 import type { BadgeTone } from "./Badge";
 
@@ -68,7 +68,7 @@ function AppToastCard({ type, text1, text2 }: ToastConfigParams<unknown>) {
       >
         <View
           className="h-9 w-9 items-center justify-center rounded-xl"
-          style={{ backgroundColor: `${accent}1A` }}
+          style={{ backgroundColor: alpha(accent, 0.1) }}
         >
           <Icon size={20} color={accent} strokeWidth={2} />
         </View>
