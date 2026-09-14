@@ -16,31 +16,19 @@ import {
   SchibstedGrotesk_700Bold,
 } from "@expo-google-fonts/schibsted-grotesk";
 import * as SplashScreen from "expo-splash-screen";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
 import NetInfo from "@react-native-community/netinfo";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ShareIntentProvider, useShareIntentContext } from "expo-share-intent";
 import { useAuthStore } from "@/store/auth.store";
-import { useOfflineStore } from "@/store/offline.store";
+import { useOfflineStore, startPeriodicSync, stopPeriodicSync } from "@/store/offline.store";
 import { getDatabase } from "@/database/database.service";
 import { ThemeProvider, useAppTheme } from "@/components/ThemeProvider";
 import { AppToast } from "@/components/ui/Toast";
 
 SplashScreen.preventAutoHideAsync();
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      staleTime: 1000 * 60 * 5,
-      networkMode: "always",
-    },
-    mutations: {
-      networkMode: "always",
-    },
-  },
-});
 
 function RootLayoutInner() {
   const initialize = useAuthStore((state) => state.initialize);
@@ -78,6 +66,10 @@ function RootLayoutInner() {
   useEffect(() => {
     getDatabase().catch(() => {});
     initialize();
+    // Sync periódico de la cola pending_operations. Se arranca explícitamente
+    // aquí (y no al importar offline.store) para que los tests que importan el
+    // store no queden con un setInterval vivo que impida salir al worker.
+    startPeriodicSync();
 
     const unsubscribe = NetInfo.addEventListener((state) => {
       const online =
@@ -85,7 +77,10 @@ function RootLayoutInner() {
       setOnlineStatus(online);
     });
 
-    return () => unsubscribe();
+    return () => {
+      stopPeriodicSync();
+      unsubscribe();
+    };
   }, [initialize, setOnlineStatus]);
 
   // Contenido compartido desde otra app (SMS/notificación de banco reenviada

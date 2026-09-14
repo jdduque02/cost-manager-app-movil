@@ -4,7 +4,7 @@
  * Mockea sync.service y local.repository para probar la lógica del store.
  */
 
-import { useOfflineStore } from "../offline.store";
+import { useOfflineStore, stopPeriodicSync } from "../offline.store";
 import { syncPendingOperations } from "@/database/sync.service";
 import { getPendingOperations } from "@/database/local.repository";
 
@@ -34,6 +34,13 @@ function resetStore() {
 beforeEach(() => {
   jest.resetAllMocks();
   resetStore();
+});
+
+afterEach(() => {
+  // El módulo registra un setInterval periódico a nivel de módulo; pararlo
+  // aquí evita que el worker no termine (antes la suite "pasaba" solo por
+  // el force-exit de Jest — ver auditoría de tests de sept/2026).
+  stopPeriodicSync();
 });
 
 // ─── setOnlineStatus ──────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import {
   type SyncResult,
 } from "@/database/sync.service";
 import { getPendingOperations } from "@/database/local.repository";
+import { queryClient } from "@/lib/queryClient";
 
 // Sincroniza automáticamente cada ~2-3 min además del disparo al reconectar,
 // para no depender únicamente del evento offline→online (p.ej. si la app
@@ -64,6 +65,11 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
         lastSyncResult: result,
       });
       await get().refreshPendingCount();
+      // El sync escribió datos nuevos en SQLite/remoto; invalidar las queries
+      // para que las pantallas hagan refetch. Es necesario porque
+      // `useOfflineQuery` fuerza `networkMode: "always"` (las queries nunca
+      // pasan a "paused"), así que `refetchOnReconnect` nunca se dispara.
+      queryClient.invalidateQueries();
       return result;
     } catch {
       return null;
@@ -87,10 +93,22 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
 // cubrir el caso en que la app nunca perdió conexión pero un sync anterior
 // falló. No depende de AppState (evita una segunda suscripción — el refresh
 // proactivo de tokens en `api/client.ts` ya escucha foreground/background).
-setInterval(() => {
-  const { isOnline, isSyncing, pendingCount, skippedCount, sync } =
-    useOfflineStore.getState();
-  if (isOnline && !isSyncing && pendingCount > skippedCount) {
-    sync();
+let periodicSyncTimer: ReturnType<typeof setInterval> | null = null;
+
+export function startPeriodicSync(): void {
+  if (periodicSyncTimer != null) return;
+  periodicSyncTimer = setInterval(() => {
+    const { isOnline, isSyncing, pendingCount, skippedCount, sync } =
+      useOfflineStore.getState();
+    if (isOnline && !isSyncing && pendingCount > skippedCount) {
+      sync();
+    }
+  }, PERIODIC_SYNC_INTERVAL_MS);
+}
+
+export function stopPeriodicSync(): void {
+  if (periodicSyncTimer != null) {
+    clearInterval(periodicSyncTimer);
+    periodicSyncTimer = null;
   }
-}, PERIODIC_SYNC_INTERVAL_MS);
+}
