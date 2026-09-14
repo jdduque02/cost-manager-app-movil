@@ -3,6 +3,8 @@ import { View, Text, ScrollView, Pressable } from "react-native";
 import { useAuthStore } from "@/store/auth.store";
 import { useOfflineQuery } from "@/hooks/useOfflineQuery";
 import { apiClient } from "@/api/client";
+import { getLocalTransactions } from "@/database/local.repository";
+import { formatCurrency } from "@/utils/format";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -65,14 +67,6 @@ function getDateRange(preset: DatePreset): { date_from: string; date_to: string 
   }
 }
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
 interface TransactionSummaryTotals {
   income: number;
   expenses: number;
@@ -102,6 +96,83 @@ interface TransactionItem {
   type: string;
   transaction_date: string;
 }
+
+function startOfWeek(date: Date): Date {
+  const d = new Date(date);
+  const day = (d.getDay() + 6) % 7; // lunes = 0
+  d.setDate(d.getDate() - day);
+  return d;
+}
+
+/**
+ * Version offline del resumen del servidor: agrega las transacciones de la
+ * caché local dentro del rango seleccionado (por type y por el group_by
+ * elegido). Antes el fallback devolvía totals en cero, lo que el usuario
+ * leía como "no hay gastos" cuando en realidad era "no hay conexión".
+ */
+async function buildLocalSummary(
+  userId: number,
+  dateRange: { date_from: string; date_to: string },
+  groupBy: GroupBy,
+): Promise<TransactionSummary> {
+  const txs = await getLocalTransactions(userId);
+  const totals: TransactionSummaryTotals = {
+    income: 0,
+    expenses: 0,
+    investments: 0,
+    count: 0,
+  };
+  const buckets = new Map<string, TransactionSummarySeriesItem>();
+
+  for (const t of txs) {
+    const day = (t.transaction_date || t.created_at || "").slice(0, 10);
+    if (!day || day < dateRange.date_from || day > dateRange.date_to) continue;
+
+    const amount = Number(t.amount ?? 0);
+    if (t.type === "income") totals.income += amount;
+    else if (t.type === "expense") totals.expenses += amount;
+    else if (t.type === "investment") totals.investments += amount;
+    totals.count += 1;
+
+    const date = new Date(`${day}T00:00:00`);
+    let key: string;
+    let label: string;
+    if (groupBy === "day") {
+      key = day;
+      label = date.toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
+    } else if (groupBy === "week") {
+      const monday = startOfWeek(date);
+      key = monday.toISOString().slice(0, 10);
+      label = monday.toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
+    } else {
+      key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      label = date.toLocaleDateString("es-CO", { month: "short", year: "numeric" });
+    }
+
+    const bucket =
+      buckets.get(key) ??
+      ({ key, label, income: 0, expenses: 0, investments: 0, count: 0 } as TransactionSummarySeriesItem);
+    if (t.type === "income") bucket.income += amount;
+    else if (t.type === "expense") bucket.expenses += amount;
+    else if (t.type === "investment") bucket.investments += amount;
+    bucket.count += 1;
+    buckets.set(key, bucket);
+  }
+
+  // getLocalTransactions devuelve orden DESC; el servidor manda la serie
+  // cronológica — revertir para que el eje del gráfico no quede invertido.
+  return {
+    group_by: groupBy,
+    totals,
+    series: Array.from(buckets.values()).reverse(),
+  };
+}
+
+const EMPTY_SUMMARY: TransactionSummary = {
+  group_by: "month",
+  totals: { income: 0, expenses: 0, investments: 0, count: 0 },
+  series: [],
+};
 
 export default function ReportsScreen() {
   const userId = useAuthStore((s) => s.userId);
@@ -143,11 +214,7 @@ export default function ReportsScreen() {
       },
       enabled: !!userId,
     },
-    async () => ({
-      group_by: groupBy,
-      totals: { income: 0, expenses: 0, investments: 0, count: 0 },
-      series: [],
-    }),
+    async () => (userId ? buildLocalSummary(userId, dateRange, groupBy) : EMPTY_SUMMARY),
   );
 
   const { data: transactions, isLoading: txLoading } = useOfflineQuery<{ data: TransactionItem[] }>(
@@ -165,7 +232,23 @@ export default function ReportsScreen() {
       },
       enabled: !!userId,
     },
-    async () => ({ data: [] }),
+    async () => {
+      if (!userId) return { data: [] };
+      const txs = await getLocalTransactions(userId);
+      const inRange = txs.filter((t) => {
+        const day = (t.transaction_date || t.created_at || "").slice(0, 10);
+        return day && day >= dateRange.date_from && day <= dateRange.date_to;
+      });
+      return {
+        data: inRange.map((t) => ({
+          id: t.id,
+          description: t.description,
+          amount: t.amount,
+          type: t.type,
+          transaction_date: t.transaction_date,
+        })),
+      };
+    },
   );
 
   const isLoading = summaryLoading || txLoading;
