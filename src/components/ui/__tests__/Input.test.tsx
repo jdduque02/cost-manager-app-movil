@@ -8,6 +8,7 @@
  *    pasa de vacío a tener texto, no en cada re-render con error presente.
  */
 import React from "react";
+import { Text } from "react-native";
 import { render, screen, fireEvent } from "@testing-library/react-native";
 import { shakeError } from "@/utils/animations";
 import { Input } from "../Input";
@@ -66,5 +67,16 @@ describe("Input", () => {
 
     rerender(<Input value="" onChangeText={() => {}} error="Requerido" />);
     expect(mockShakeError).toHaveBeenCalledTimes(1);
+  });
+
+  it("renderiza rightElement junto al campo (p. ej. toggle mostrar/ocultar contraseña)", () => {
+    render(
+      <Input
+        value=""
+        onChangeText={() => {}}
+        rightElement={<Text>toggle-password</Text>}
+      />,
+    );
+    expect(screen.getByText("toggle-password")).toBeTruthy();
   });
 });
