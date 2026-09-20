@@ -19,7 +19,7 @@ import { toast } from "@/utils/toast";
 
 function validatePassword(pw: string): string[] {
   const errors: string[] = [];
-  if (pw.length < 8) errors.push("Mínimo 8 caracteres");
+  if (pw.length < 12) errors.push("Mínimo 12 caracteres");
   if (!/[A-Z]/.test(pw)) errors.push("Requiere una mayúscula");
   if (!/[a-z]/.test(pw)) errors.push("Requiere una minúscula");
   if (!/[0-9]/.test(pw)) errors.push("Requiere un número");
@@ -102,7 +102,7 @@ export default function ChangePasswordScreen() {
           {newPassword.length > 0 && (
             <View className="mb-3 gap-1">
               {[
-                { label: "8+ caracteres", ok: newPassword.length >= 8 },
+                { label: "12+ caracteres", ok: newPassword.length >= 12 },
                 { label: "Una mayúscula", ok: /[A-Z]/.test(newPassword) },
                 { label: "Una minúscula", ok: /[a-z]/.test(newPassword) },
                 { label: "Un número", ok: /[0-9]/.test(newPassword) },

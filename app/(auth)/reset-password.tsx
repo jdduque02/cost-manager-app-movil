@@ -25,8 +25,8 @@ export default function ResetPasswordScreen() {
       return;
     }
 
-    if (password.length < 8) {
-      toast.error("La contrasena debe tener al menos 8 caracteres");
+    if (password.length < 12) {
+      toast.error("La contrasena debe tener al menos 12 caracteres");
       return;
     }
 
@@ -69,7 +69,7 @@ export default function ResetPasswordScreen() {
             label="Nueva contrasena"
             value={password}
             onChangeText={setPassword}
-            placeholder="Minimo 8 caracteres"
+            placeholder="Minimo 12 caracteres"
             secureTextEntry
           />
           <Input

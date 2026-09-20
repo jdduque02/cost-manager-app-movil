@@ -31,10 +31,10 @@ export interface PasswordValidation {
 }
 
 export function validatePassword(password: string): PasswordValidation {
-  if (password.length < 8) {
+  if (password.length < 12) {
     return {
       valid: false,
-      message: "La contraseña debe tener al menos 8 caracteres",
+      message: "La contraseña debe tener al menos 12 caracteres",
     };
   }
   if (!/[A-Z]/.test(password)) {

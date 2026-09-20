@@ -116,7 +116,7 @@ export default function RegisterScreen() {
             label="Contrasena"
             value={password}
             onChangeText={setPassword}
-            placeholder="Minimo 8 caracteres"
+            placeholder="Minimo 12 caracteres"
             secureTextEntry
           />
           <Input
