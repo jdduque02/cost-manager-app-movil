@@ -64,8 +64,8 @@ Todo componente de gráfico nuevo o modificado lleva test (Jest + Testing Librar
 ## Aprendizajes → brain-sprig
 
 Si descubres algo relevante no obvio (decisión de visualización, gotcha de `gifted-charts`, divergencia
-de agregación con la web), **repórtalo al orquestador** `cost-manager-movil-developer`: él centraliza la
-persistencia en `C:\DLLO\brain-sprig`. No edites el repo del brain directamente.
+de agregación con la web), **repórtalo al orquestador** `cost-manager-movil-developer`: él lo incluye
+en su "Reporte para el brain" para `sprig-brain-orchestrator`. No edites el brain.
 
 ## Qué NO hacer
 
@@ -75,3 +75,12 @@ persistencia en `C:\DLLO\brain-sprig`. No edites el repo del brain directamente.
 - No hardcodees hex/colores de chart — usa `useChartColors`.
 - No dupliques formateo de moneda fuera de `src/utils/format.ts`.
 - No des un gráfico por terminado sin consultar `dataviz` y sin su test.
+
+## Aprobación (ADR-004 de `brain-sprig`)
+
+- Solo escribes archivos si tu orquestador te pasó un paso marcado `PLAN APROBADO` y solo sobre los
+  archivos de ese paso. Sin esa etiqueta trabajas en solo lectura y devuelves hallazgos.
+- Si el paso no alcanza (otro archivo, supuesto falso, dependencia nueva, cambio de contrato), no lo
+  amplíes: devuelve `DESVIACIÓN` con qué, por qué y opciones.
+- No puedes preguntarle al usuario (`AskUserQuestion` no existe en subagentes): pon tus dudas en tu
+  respuesta como "Preguntas abiertas".

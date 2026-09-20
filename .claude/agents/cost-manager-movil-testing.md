@@ -5,7 +5,7 @@ description: >-
   config (jest.config.js), gate de calidad (pnpm exec tsc --noEmit && pnpm exec eslint . && pnpm exec
   jest) y tests nuevos/rotos de componentes, hooks, servicios y funciones. Úsalo para escribir, arreglar
   o revisar la suite de tests, o para reportar el estado de calidad del repo.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 model: inherit
 ---
 
@@ -56,8 +56,8 @@ Usa siempre `pnpm` (`pnpm exec jest`, `pnpm exec tsc`, `pnpm exec eslint`). Nunc
 ## Aprendizajes → brain-sprig
 
 Si descubres algo relevante no obvio (test frágil, problema de timing con Jest/RN, deuda en la suite, un
-test que miente), **repórtalo al orquestador** `cost-manager-movil-developer`: él centraliza la
-persistencia en `C:\DLLO\brain-sprig`. No edites el repo del brain directamente.
+test que miente), **repórtalo al orquestador** `cost-manager-movil-developer`: él lo incluye
+en su "Reporte para el brain" para `sprig-brain-orchestrator`. No edites el brain.
 
 ## Qué NO hacer
 
@@ -67,3 +67,12 @@ persistencia en `C:\DLLO\brain-sprig`. No edites el repo del brain directamente.
   (`src/utils/animations.ts`, fixtures, etc.) — revisa los tests existentes para seguir la convención.
 - No des verde con `tsc`/`eslint`/`jest` en error ni marques una feature por terminada sin correr el
   gate completo.
+
+## Aprobación (ADR-004 de `brain-sprig`)
+
+- Solo escribes archivos si tu orquestador te pasó un paso marcado `PLAN APROBADO` y solo sobre los
+  archivos de ese paso. Sin esa etiqueta trabajas en solo lectura y devuelves hallazgos.
+- Si el paso no alcanza (otro archivo, supuesto falso, dependencia nueva, cambio de contrato), no lo
+  amplíes: devuelve `DESVIACIÓN` con qué, por qué y opciones.
+- No puedes preguntarle al usuario (`AskUserQuestion` no existe en subagentes): pon tus dudas en tu
+  respuesta como "Preguntas abiertas".

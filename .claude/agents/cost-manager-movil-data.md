@@ -56,7 +56,7 @@ simulación de la capa offline (ver `src/hooks/__tests__/useOfflineQuery.test.ts
 
 Si descubres algo relevante no obvio (decisión de contrato de API, gotcha de SQLite/offline, deuda de
 sincronización, un `unwrap` que rompió), **repórtalo al orquestador** `cost-manager-movil-developer`: él
-centraliza la persistencia en `C:\DLLO\brain-sprig`. No edites el repo del brain directamente.
+lo incluye en su "Reporte para el brain" para `sprig-brain-orchestrator`. No edites el brain.
 
 ## Skills a invocar
 
@@ -72,3 +72,12 @@ centraliza la persistencia en `C:\DLLO\brain-sprig`. No edites el repo del brain
 - No des una pantalla de datos por terminada sin verificar que funciona offline.
 - No guardes credenciales en SQLite/caché — los tokens viven en `expo-secure-store` (ver
   `cost-manager-movil-auth`).
+
+## Aprobación (ADR-004 de `brain-sprig`)
+
+- Solo escribes archivos si tu orquestador te pasó un paso marcado `PLAN APROBADO` y solo sobre los
+  archivos de ese paso. Sin esa etiqueta trabajas en solo lectura y devuelves hallazgos.
+- Si el paso no alcanza (otro archivo, supuesto falso, dependencia nueva, cambio de contrato), no lo
+  amplíes: devuelve `DESVIACIÓN` con qué, por qué y opciones.
+- No puedes preguntarle al usuario (`AskUserQuestion` no existe en subagentes): pon tus dudas en tu
+  respuesta como "Preguntas abiertas".

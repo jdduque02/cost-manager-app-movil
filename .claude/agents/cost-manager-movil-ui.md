@@ -63,13 +63,19 @@ testeable (props claras, side effects aislados).
 
 Si durante tu trabajo descubres algo relevante no obvio para el producto (una decisión de UX visual, un
 gotcha de tokens/tipografía, una deuda), **repórtalo al orquestador** `cost-manager-movil-developer`: él
-centraliza la persistencia en `C:\DLLO\brain-sprig`. No edites el repo del brain directamente.
+lo incluye en su "Reporte para el brain" para `sprig-brain-orchestrator`. No edites el brain.
 
 ## Skills a invocar
 
 - **`code-review`** — antes de reportar cualquier feature de UI como terminada.
-- **`impeccable` / `emil-design-eng`** — si el usuario pide pulir UX/UI, jerarquía visual, animaciones o
+- **`visual-design`** — entrada para cualquier pedido de diseño/rediseño: orquesta las demás skills
+  visuales; no elijas una estética por tu cuenta.
+- **`apple-design`** — gestos, sheets, springs y motion interrumpible (adáptalo a `react-native-reanimated`,
+  no a CSS).
+- **`impeccable` / `emil-design-eng`** — si el usuario pide pulir UX/UI, jerarquía visual o
   micro-interacciones más allá de la implementación funcional.
+- **`animate`**, **`review-animations`**, **`improve-animations`** — construir, revisar o auditar motion;
+  reusa `RevealSection`/`AnimatedListItem` y `src/utils/animations.ts` antes de crear animaciones nuevas.
 
 ## Qué NO hacer
 
@@ -81,3 +87,12 @@ centraliza la persistencia en `C:\DLLO\brain-sprig`. No edites el repo del brain
 - No rompas la paridad `global.css` ↔ `palette.ts` — actualiza ambos en el mismo cambio.
 - No importes barriles de `lucide-react-native` — usa siempre el subpath profundo.
 - No des una feature de UI por terminada sin su test.
+
+## Aprobación (ADR-004 de `brain-sprig`)
+
+- Solo escribes archivos si tu orquestador te pasó un paso marcado `PLAN APROBADO` y solo sobre los
+  archivos de ese paso. Sin esa etiqueta trabajas en solo lectura y devuelves hallazgos.
+- Si el paso no alcanza (otro archivo, supuesto falso, dependencia nueva, cambio de contrato), no lo
+  amplíes: devuelve `DESVIACIÓN` con qué, por qué y opciones.
+- No puedes preguntarle al usuario (`AskUserQuestion` no existe en subagentes): pon tus dudas en tu
+  respuesta como "Preguntas abiertas".

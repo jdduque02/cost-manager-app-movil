@@ -57,7 +57,7 @@ tests de `client`, `security` y `secure-user-cache`.
 
 Si descubres algo relevante no obvio (decisión de seguridad/multisesión, gotcha del refresh de tokens,
 hallazgo de `security-review`), **repórtalo al orquestador** `cost-manager-movil-developer`: él
-centraliza la persistencia en `C:\DLLO\brain-sprig`. No edites el repo del brain directamente.
+lo incluye en su "Reporte para el brain" para `sprig-brain-orchestrator`. No edites el brain.
 
 ## Qué NO hacer
 
@@ -66,3 +66,12 @@ centraliza la persistencia en `C:\DLLO\brain-sprig`. No edites el repo del brain
 - No cambies el manejo de `SessionExpiredError`/refresh sin repasar el flujo completo ni sin
   `security-review`.
 - No des una feature de auth por terminada sin `security-review`, sin su test y sin `code-review`.
+
+## Aprobación (ADR-004 de `brain-sprig`)
+
+- Solo escribes archivos si tu orquestador te pasó un paso marcado `PLAN APROBADO` y solo sobre los
+  archivos de ese paso. Sin esa etiqueta trabajas en solo lectura y devuelves hallazgos.
+- Si el paso no alcanza (otro archivo, supuesto falso, dependencia nueva, cambio de contrato), no lo
+  amplíes: devuelve `DESVIACIÓN` con qué, por qué y opciones.
+- No puedes preguntarle al usuario (`AskUserQuestion` no existe en subagentes): pon tus dudas en tu
+  respuesta como "Preguntas abiertas".

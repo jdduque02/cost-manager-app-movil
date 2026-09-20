@@ -16,4 +16,6 @@ Buenas prácticas de este repo (cada línea ≤200 caracteres):
 - No uses las skills finance:* (GAAP/SOX) — no aplican a esta app de finanzas personales colombiana.
 - Backend local expuesto por túnel (ngrok/Dev Tunnels) para probar en dispositivo físico — la URL cambia cada reinicio: actualiza .env (API_BASE_URL) y reinicia Metro con `--clear`.
 - Usa el agente cost-manager-movil-developer (.claude/agents/) como orquestador de este repo: clasifica la tarea y delega en los sub-agentes por capa (.claude/agents/ cost-manager-movil-{ui,charts,data,auth,testing}). Usa memoria persistente (MEMORY.md + memory/) para decisiones de UX/negocio no derivables del código.
-- Cada aprendizaje relevante no obvio que el orquestador o sus sub-agentes produzcan se persiste en el brain de Sprig (C:\DLLO\brain-sprig, ver sección "brain-sprig" del orquestador) antes de dar la tarea por terminada.
+- Punto de entrada de Sprig: `sprig-brain-orchestrator` en C:\DLLO\brain-sprig (ADR-003); este repo vive en `brain-sprig\DLLO\Sprig-movil`.
+- Los aprendizajes no obvios NO se escriben en el brain desde aquí: el orquestador los entrega en un bloque "Reporte para el brain" y el brain los registra.
+- Commits de este repo: sub-agente `sprig-movil-commit-writer`, solo con aprobación explícita del usuario.
