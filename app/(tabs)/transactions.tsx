@@ -8,8 +8,15 @@ import {
   ScrollView,
   Pressable,
 } from "react-native";
-import { useState, useMemo, useEffect } from "react";
-import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
+import { useState, useMemo, useEffect, memo } from "react";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+  runOnJS,
+} from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/auth.store";
@@ -39,6 +46,7 @@ import type {
 } from "@/types/catalog.types";
 import type { FinancialObjectiveType } from "@/types/objective.types";
 import { Card } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { CurrencyInput } from "@/components/ui/CurrencyInput";
@@ -52,8 +60,13 @@ import { SegmentedControl, type SegmentedOption } from "@/components/ui/Segmente
 import { StaleDataBanner } from "@/components/StaleDataBanner";
 import { TransferModal } from "@/components/transactions/TransferModal";
 import { CloneTransactionModal } from "@/components/transactions/CloneTransactionModal";
-import { useReducedMotion, EASE_IN_OUT_STRONG, CROSSFADE_DURATION } from "@/utils/animations";
-import { Plus, ReceiptText, Copy, Check, ArrowLeftRight } from "@/components/ui/icons";
+import {
+  useReducedMotion,
+  EASE_IN_OUT_STRONG,
+  CROSSFADE_DURATION,
+  SPRING_SPRIG,
+} from "@/utils/animations";
+import { Plus, ReceiptText, Copy, Check, ArrowLeftRight, Trash } from "@/components/ui/icons";
 import {
   TRANSACTION_TYPES,
   TYPE_LABELS,
@@ -133,6 +146,107 @@ function FadeInContent({ children }: { children: React.ReactNode }) {
 
   return <Animated.View style={[{ flex: 1 }, animatedStyle]}>{children}</Animated.View>;
 }
+
+// Umbrales del swipe-to-delete de la fila de transacción: recorrido en px o
+// velocidad de flick mínima (uno u otro) para disparar `confirmDelete` al
+// soltar — igual de estrechos en el offset activo que el swipe de navegación
+// entre tabs (app/(tabs)/_layout.tsx) para no robarle el scroll vertical a la
+// FlatList que envuelve estas filas.
+const SWIPE_DELETE_DISTANCE_THRESHOLD = 60;
+const SWIPE_DELETE_VELOCITY_THRESHOLD = 250;
+const SWIPE_DELETE_MAX_TRANSLATE = -88;
+
+/**
+ * Fila de transacción con swipe-to-delete horizontal (reemplaza el
+ * long-press). Extraída como componente memoizado (no una función de
+ * `renderItem` inline) porque el gesto necesita su propio `useSharedValue`
+ * por fila — llamar hooks dentro de la función `renderTransactionItem`
+ * (invocada imperativamente por `FlatList`, sin Fiber propio) rompería las
+ * reglas de hooks en cuanto cambiara el largo de la lista filtrada.
+ */
+const TransactionRow = memo(function TransactionRow({
+  item,
+  index,
+  right,
+  onDelete,
+}: {
+  item: TransactionRecordResponse;
+  index: number;
+  right: React.ReactNode;
+  onDelete: (id: number) => void;
+}) {
+  const { resolvedScheme } = useAppTheme();
+  const c = PALETTE[resolvedScheme];
+  const reduceMotion = useReducedMotion();
+  const translateX = useSharedValue(0);
+
+  function triggerDelete() {
+    onDelete(item.id);
+  }
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetX([-24, 24])
+    .failOffsetY([-12, 12])
+    .onUpdate((e) => {
+      translateX.value = Math.min(0, Math.max(SWIPE_DELETE_MAX_TRANSLATE, e.translationX));
+    })
+    .onEnd((e) => {
+      const passedThreshold =
+        e.translationX < -SWIPE_DELETE_DISTANCE_THRESHOLD ||
+        e.velocityX < -SWIPE_DELETE_VELOCITY_THRESHOLD;
+      translateX.value = reduceMotion ? 0 : withSpring(0, SPRING_SPRIG);
+      if (passedThreshold) {
+        runOnJS(triggerDelete)();
+      }
+    });
+
+  const rowStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  const actionStyle = useAnimatedStyle(() => ({
+    opacity: Math.min(1, Math.abs(translateX.value) / Math.abs(SWIPE_DELETE_MAX_TRANSLATE)),
+  }));
+
+  return (
+    <AnimatedListItem index={index} className="mb-2">
+      <View className="relative">
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            {
+              position: "absolute",
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: -SWIPE_DELETE_MAX_TRANSLATE,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 12,
+              backgroundColor: c.destructive,
+            },
+            actionStyle,
+          ]}
+        >
+          <Trash size={18} color={c.destructiveForeground} />
+        </Animated.View>
+        <GestureDetector gesture={panGesture}>
+          <Animated.View style={rowStyle}>
+            <Card variant="flat" className="p-2">
+              <ListRow
+                icon={TYPE_ICON[item.type]}
+                tone={TYPE_TONE[item.type]}
+                title={item.description ?? `Transacción #${item.id}`}
+                meta={new Date(item.transaction_date).toLocaleDateString("es-CO")}
+                right={right}
+              />
+            </Card>
+          </Animated.View>
+        </GestureDetector>
+      </View>
+    </AnimatedListItem>
+  );
+});
 
 export default function TransactionsScreen() {
   const userId = useAuthStore((s) => s.userId);
@@ -464,13 +578,6 @@ export default function TransactionsScreen() {
   }
 
   function confirmDelete(id: number) {
-    if (!isOnline) {
-      Alert.alert(
-        "Sin conexión",
-        "No puedes eliminar registros en modo offline",
-      );
-      return;
-    }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     Alert.alert("Eliminar", "¿Seguro que deseas eliminar esta transacción?", [
       { text: "Cancelar", style: "cancel" },
@@ -486,6 +593,7 @@ export default function TransactionsScreen() {
   function renderRowRight(tx: TransactionRecordResponse) {
     return (
       <View className="flex-row items-center gap-2">
+        {tx.is_pending_sync === true && <Badge tone="warning">Pendiente</Badge>}
         <Text
           className={`text-sm font-num-semibold ${TYPE_AMOUNT_CLASS[tx.type]}`}
           style={{ fontVariant: ["tabular-nums"] }}
@@ -508,17 +616,12 @@ export default function TransactionsScreen() {
     index: number;
   }) {
     return (
-      <AnimatedListItem index={index} className="mb-2">
-        <Card variant="flat" className="p-2" onLongPress={() => confirmDelete(item.id)}>
-          <ListRow
-            icon={TYPE_ICON[item.type]}
-            tone={TYPE_TONE[item.type]}
-            title={item.description ?? `Transacción #${item.id}`}
-            meta={new Date(item.transaction_date).toLocaleDateString("es-CO")}
-            right={renderRowRight(item)}
-          />
-        </Card>
-      </AnimatedListItem>
+      <TransactionRow
+        item={item}
+        index={index}
+        right={renderRowRight(item)}
+        onDelete={confirmDelete}
+      />
     );
   }
 
