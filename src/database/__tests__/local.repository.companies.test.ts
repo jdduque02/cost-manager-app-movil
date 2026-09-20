@@ -95,6 +95,7 @@ describe("getLocalCompanies", () => {
         default_category_id: null,
         created_at: "2024-01-01",
         updated_at: "2024-01-02",
+        is_pending_sync: false,
       },
     ]);
   });

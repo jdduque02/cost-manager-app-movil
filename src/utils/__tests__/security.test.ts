@@ -69,35 +69,35 @@ describe("validateEmail", () => {
 
 describe("validatePassword", () => {
   it("acepta una contraseña válida", () => {
-    expect(validatePassword("Passw0rd")).toEqual({ valid: true });
+    expect(validatePassword("Passw0rdSegura")).toEqual({ valid: true });
   });
 
-  it("rechaza contraseñas de menos de 8 caracteres", () => {
-    const result = validatePassword("Ab1");
+  it("rechaza contraseñas de menos de 12 caracteres", () => {
+    const result = validatePassword("Ab1defgh1");
     expect(result.valid).toBe(false);
-    expect(result.message).toMatch(/8 caracteres/);
+    expect(result.message).toMatch(/12 caracteres/);
   });
 
   it("rechaza contraseñas sin mayúscula", () => {
-    const result = validatePassword("password1");
+    const result = validatePassword("password12345");
     expect(result.valid).toBe(false);
     expect(result.message).toMatch(/mayúscula/);
   });
 
   it("rechaza contraseñas sin minúscula", () => {
-    const result = validatePassword("PASSWORD1");
+    const result = validatePassword("PASSWORD12345");
     expect(result.valid).toBe(false);
     expect(result.message).toMatch(/minúscula/);
   });
 
   it("rechaza contraseñas sin número", () => {
-    const result = validatePassword("Password");
+    const result = validatePassword("PasswordSegura");
     expect(result.valid).toBe(false);
     expect(result.message).toMatch(/número/);
   });
 
   it("acepta contraseñas con caracteres especiales", () => {
-    expect(validatePassword("Passw0rd!@#")).toEqual({ valid: true });
+    expect(validatePassword("Passw0rdSegura!@#")).toEqual({ valid: true });
   });
 });
 
