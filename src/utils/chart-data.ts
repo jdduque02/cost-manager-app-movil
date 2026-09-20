@@ -1,3 +1,6 @@
+/** Duración (ms) de la animación de entrada compartida por los tres charts de `src/components/charts`. */
+export const CHART_ANIMATION_DURATION = 700;
+
 export interface MonthlyPoint {
   label: string;
   income: number;

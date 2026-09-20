@@ -1,7 +1,7 @@
 import { View, Text } from "react-native";
 import { BarChart } from "react-native-gifted-charts";
 import { useChartColors } from "@/hooks/useChartColors";
-import type { CategorySpendingPoint } from "@/utils/chart-data";
+import { CHART_ANIMATION_DURATION, type CategorySpendingPoint } from "@/utils/chart-data";
 
 interface CategoryBarsProps {
   points: CategorySpendingPoint[];
@@ -36,6 +36,8 @@ export function CategoryBars({ points, height = 220 }: CategoryBarsProps) {
     <BarChart
       data={data}
       horizontal
+      isAnimated
+      animationDuration={CHART_ANIMATION_DURATION}
       barBorderRadius={8}
       height={height}
       frontColor={colors.chart1}

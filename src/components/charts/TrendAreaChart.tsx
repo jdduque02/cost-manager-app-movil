@@ -3,7 +3,7 @@ import { View, Text, type LayoutChangeEvent } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
 import { useChartColors } from "@/hooks/useChartColors";
 import { formatCompactCurrency } from "@/utils/format";
-import type { MonthlyPoint } from "@/utils/chart-data";
+import { CHART_ANIMATION_DURATION, type MonthlyPoint } from "@/utils/chart-data";
 
 interface TrendAreaChartProps {
   points: MonthlyPoint[];
@@ -51,6 +51,8 @@ export function TrendAreaChart({ points, height = 180 }: TrendAreaChartProps) {
           <LineChart
             areaChart
             curved
+            isAnimated
+            animationDuration={CHART_ANIMATION_DURATION}
             data={incomeData}
             data2={expenseData}
             width={width - 20}

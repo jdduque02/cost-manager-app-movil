@@ -3,7 +3,7 @@ import { View, Text, type LayoutChangeEvent } from "react-native";
 import { PieChart } from "react-native-gifted-charts";
 import { useChartColors } from "@/hooks/useChartColors";
 import { formatCurrency } from "@/utils/format";
-import type { CategorySpendingPoint } from "@/utils/chart-data";
+import { CHART_ANIMATION_DURATION, type CategorySpendingPoint } from "@/utils/chart-data";
 
 interface CategoryDonutProps {
   points: CategorySpendingPoint[];
@@ -57,6 +57,8 @@ export function CategoryDonut({ points }: CategoryDonutProps) {
           <PieChart
             data={data}
             donut
+            isAnimated
+            animationDuration={CHART_ANIMATION_DURATION}
             radius={radius}
             innerRadius={radius * 0.6}
             innerCircleColor={colors.card}
