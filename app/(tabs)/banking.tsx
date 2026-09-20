@@ -267,11 +267,12 @@ export default function BankingScreen() {
                 right={
                   <View className="items-end">
                     <Money value={Number(item.display_balance)} className="text-sm text-foreground" />
-                    {item.is_primary && (
-                      <Badge tone="success" className="mt-1">
-                        Principal
-                      </Badge>
-                    )}
+                    <View className="flex-row gap-1 mt-1">
+                      {item.is_pending_sync === true && (
+                        <Badge tone="warning">Pendiente</Badge>
+                      )}
+                      {item.is_primary && <Badge tone="success">Principal</Badge>}
+                    </View>
                   </View>
                 }
               />

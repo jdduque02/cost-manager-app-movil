@@ -324,6 +324,9 @@ export default function ObjectivesScreen() {
                           <Pencil size={16} color={PALETTE[resolvedScheme].mutedForeground} />
                         </Pressable>
                       )}
+                      {item.is_pending_sync === true && (
+                        <Badge tone="warning">Pendiente</Badge>
+                      )}
                       {item.is_completed && <Badge tone="success">Completado</Badge>}
                     </View>
                   </View>

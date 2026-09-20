@@ -7,6 +7,7 @@ import { useAppTheme } from "@/components/ThemeProvider";
 import { PALETTE } from "@/theme/palette";
 import * as empresasApi from "@/api/empresas.api";
 import { Card } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -161,7 +162,10 @@ export default function EmpresasScreen() {
                   title={empresa.name}
                   meta={`Creada: ${new Date(empresa.created_at).toLocaleDateString("es-CO")}`}
                   right={
-                    <View className="flex-row gap-1">
+                    <View className="flex-row items-center gap-1">
+                      {empresa.is_pending_sync === true && (
+                        <Badge tone="warning">Pendiente</Badge>
+                      )}
                       <Button variant="ghost" size="icon" onPress={() => openEdit(empresa)}>
                         <Pencil size={16} color={PALETTE[resolvedScheme].mutedForeground} />
                       </Button>
