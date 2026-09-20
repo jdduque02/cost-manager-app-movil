@@ -361,6 +361,7 @@ export async function getLocalBankAccounts(
     is_primary: number;
     created_at: string;
     updated_at: string;
+    is_pending_sync: number;
   }>("SELECT * FROM bank_accounts WHERE user_id = ?", [userId]);
   return rows.map((r) => ({
     id: r.id,
@@ -375,6 +376,7 @@ export async function getLocalBankAccounts(
     is_primary: r.is_primary === 1,
     created_at: r.created_at,
     updated_at: r.updated_at,
+    is_pending_sync: r.is_pending_sync === 1,
   }));
 }
 
@@ -573,6 +575,7 @@ export async function getLocalTransactions(
     transaction_date: string;
     created_at: string;
     updated_at: string;
+    is_pending_sync: number;
   }>(
     "SELECT * FROM transactions WHERE user_id = ? ORDER BY transaction_date DESC",
     [userId],
@@ -604,6 +607,7 @@ export async function getLocalTransactions(
     transaction_date: r.transaction_date,
     created_at: r.created_at,
     updated_at: r.updated_at,
+    is_pending_sync: r.is_pending_sync === 1,
   }));
 }
 
@@ -834,6 +838,7 @@ export async function getLocalObjectives(
     created_at: string;
     updated_at: string;
     months_of_expenses_covered: number | null;
+    is_pending_sync: number;
   }>("SELECT * FROM financial_objectives WHERE user_id = ?", [userId]);
   return rows.map((r) => ({
     id: r.id,
@@ -852,6 +857,7 @@ export async function getLocalObjectives(
     // que no se recalcula aquí — puede quedar desactualizado hasta el
     // próximo sync, lo cual es aceptable para un campo de solo lectura.
     months_of_expenses_covered: r.months_of_expenses_covered,
+    is_pending_sync: r.is_pending_sync === 1,
   }));
 }
 
@@ -1009,6 +1015,7 @@ export async function getLocalCompanies(userId: number): Promise<EmpresaResponse
     default_category_id: number | null;
     created_at: string;
     updated_at: string;
+    is_pending_sync: number;
   }>("SELECT * FROM companies WHERE user_id = ?", [userId]);
   return rows.map((r) => ({
     id: r.id,
@@ -1017,6 +1024,7 @@ export async function getLocalCompanies(userId: number): Promise<EmpresaResponse
     default_category_id: r.default_category_id,
     created_at: r.created_at,
     updated_at: r.updated_at,
+    is_pending_sync: r.is_pending_sync === 1,
   }));
 }
 
