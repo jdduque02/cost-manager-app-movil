@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useState, useEffect } from "react";
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
+import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useReducedMotion, EASE_STANDARD } from "@/utils/animations";
@@ -148,6 +149,7 @@ export default function ObjectivesScreen() {
   const createMutation = useMutation({
     mutationFn: (dto: CreateFinancialObjectiveDto) => createOffline(dto),
     onSuccess: () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       queryClient.invalidateQueries({ queryKey: ["objectives", userId] });
       setShowModal(false);
       setForm(defaultForm());
@@ -164,6 +166,7 @@ export default function ObjectivesScreen() {
       return updateOffline(editingObjective.id, dto);
     },
     onSuccess: () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       queryClient.invalidateQueries({ queryKey: ["objectives", userId] });
       setShowModal(false);
       setEditingObjective(null);
@@ -181,6 +184,7 @@ export default function ObjectivesScreen() {
       return deleteOffline(id);
     },
     onSuccess: () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       queryClient.invalidateQueries({ queryKey: ["objectives", userId] });
       setDeletingObjective(null);
       toast.success("Objetivo eliminado");
@@ -227,6 +231,7 @@ export default function ObjectivesScreen() {
   }
 
   function confirmDelete(item: FinancialObjectiveResponse) {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     setDeletingObjective(item);
   }
 

@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { useState, useMemo, useEffect } from "react";
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
+import * as Haptics from "expo-haptics";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/auth.store";
 import * as transactionsApi from "@/api/transactions.api";
@@ -314,8 +315,10 @@ export default function TransactionsScreen() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteOffline(id),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["transactions", userId] }),
+    onSuccess: () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      queryClient.invalidateQueries({ queryKey: ["transactions", userId] });
+    },
   });
 
   const createCategoryMutation = useMutation({
@@ -468,6 +471,7 @@ export default function TransactionsScreen() {
       );
       return;
     }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     Alert.alert("Eliminar", "¿Seguro que deseas eliminar esta transacción?", [
       { text: "Cancelar", style: "cancel" },
       {
@@ -505,7 +509,7 @@ export default function TransactionsScreen() {
   }) {
     return (
       <AnimatedListItem index={index} className="mb-2">
-        <Card variant="flat" className="p-2" onPress={() => confirmDelete(item.id)}>
+        <Card variant="flat" className="p-2" onLongPress={() => confirmDelete(item.id)}>
           <ListRow
             icon={TYPE_ICON[item.type]}
             tone={TYPE_TONE[item.type]}
