@@ -1,7 +1,6 @@
 import {
   View,
   Text,
-  TextInput,
   Pressable,
   KeyboardAvoidingView,
   Platform,
@@ -24,6 +23,8 @@ import {
 import { SprigLogo } from "@/components/ui/SprigLogo";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { RevealSection } from "@/components/ui/RevealSection";
 import { Eye, EyeOff } from "@/components/ui/icons";
 import { toast } from "@/utils/toast";
 
@@ -152,93 +153,92 @@ export default function LoginScreen() {
         )}
 
         {/* Form */}
-        <Card>
-          {error ? (
-            <View className="bg-destructive/15 rounded-lg p-3 mb-4">
-              <Text className="text-destructive text-sm font-sans">{error}</Text>
-            </View>
-          ) : null}
+        <RevealSection>
+          <Card>
+            {error ? (
+              <View className="bg-destructive/15 rounded-lg p-3 mb-4">
+                <Text className="text-destructive text-sm font-sans">{error}</Text>
+              </View>
+            ) : null}
 
-          <Text className="text-sm font-sans-medium text-foreground mb-1.5">Usuario</Text>
-          <TextInput
-            className="h-11 border border-input rounded-md px-3 text-foreground bg-background mb-4 text-sm font-sans"
-            value={username}
-            onChangeText={setUsername}
-            placeholder="tu_usuario"
-            placeholderTextColor={c.mutedForeground}
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="username"
-            textContentType="username"
-            returnKeyType="next"
-            maxLength={32}
-          />
+            <Input
+              label="Usuario"
+              value={username}
+              onChangeText={setUsername}
+              placeholder="tu_usuario"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="username"
+              textContentType="username"
+              returnKeyType="next"
+              maxLength={32}
+            />
 
-          <Text className="text-sm font-sans-medium text-foreground mb-1.5">Contrasena</Text>
-          <View className="relative mb-4">
-            <TextInput
-              className="h-11 border border-input rounded-md px-3 pr-11 text-foreground bg-background text-sm font-sans"
+            <Input
+              label="Contrasena"
               value={password}
               onChangeText={setPassword}
               placeholder="********"
-              placeholderTextColor={c.mutedForeground}
               secureTextEntry={!showPassword}
               autoComplete="current-password"
               textContentType="password"
               returnKeyType="done"
               maxLength={128}
               onSubmitEditing={handleLogin}
+              rightElement={
+                <Pressable
+                  className="h-11 w-11 items-center justify-center"
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  onPress={() => setShowPassword((v) => !v)}
+                  accessibilityLabel={showPassword ? "Ocultar contrasena" : "Mostrar contrasena"}
+                >
+                  {showPassword ? (
+                    <EyeOff size={20} color={c.mutedForeground} />
+                  ) : (
+                    <Eye size={20} color={c.mutedForeground} />
+                  )}
+                </Pressable>
+              }
             />
-            <Pressable
-              className="absolute right-3 top-0 bottom-0 justify-center"
-              onPress={() => setShowPassword((v) => !v)}
-              accessibilityLabel={showPassword ? "Ocultar contrasena" : "Mostrar contrasena"}
-            >
-              {showPassword ? (
-                <EyeOff size={20} color={c.mutedForeground} />
-              ) : (
-                <Eye size={20} color={c.mutedForeground} />
-              )}
+
+            <Pressable className="self-end mb-5" onPress={() => router.push("/(auth)/forgot-password")}>
+              <Text className="text-primary text-sm font-sans">Olvidaste tu contrasena?</Text>
             </Pressable>
-          </View>
 
-          <Pressable className="self-end mb-5" onPress={() => router.push("/(auth)/forgot-password")}>
-            <Text className="text-primary text-sm font-sans">Olvidaste tu contrasena?</Text>
-          </Pressable>
+            <Button size="lg" onPress={handleLogin} loading={isLoading} disabled={isLocked}>
+              Iniciar Sesion
+            </Button>
 
-          <Button size="lg" onPress={handleLogin} loading={isLoading} disabled={isLocked}>
-            Iniciar Sesion
-          </Button>
+            {hasCachedSession && (
+              <Button
+                variant="outline"
+                size="lg"
+                onPress={handleOfflineAccess}
+                disabled={isLoading}
+                className="mt-3"
+              >
+                Continuar sin conexion
+              </Button>
+            )}
 
-          {hasCachedSession && (
             <Button
-              variant="outline"
+              variant="ghost"
               size="lg"
-              onPress={handleOfflineAccess}
+              onPress={handleContinueAsGuest}
               disabled={isLoading}
               className="mt-3"
             >
-              Continuar sin conexion
+              Continuar sin cuenta
             </Button>
-          )}
 
-          <Button
-            variant="ghost"
-            size="lg"
-            onPress={handleContinueAsGuest}
-            disabled={isLoading}
-            className="mt-3"
-          >
-            Continuar sin cuenta
-          </Button>
-
-          <View className="flex-row justify-center mt-5">
-            <Text className="text-muted-foreground text-sm font-sans">No tienes cuenta? </Text>
-            <Pressable onPress={() => router.push("/(auth)/register")}>
-              <Text className="text-primary font-sans-bold text-sm">Registrate</Text>
-            </Pressable>
-          </View>
-        </Card>
+            <View className="flex-row justify-center mt-5">
+              <Text className="text-muted-foreground text-sm font-sans">No tienes cuenta? </Text>
+              <Pressable onPress={() => router.push("/(auth)/register")}>
+                <Text className="text-primary font-sans-bold text-sm">Registrate</Text>
+              </Pressable>
+            </View>
+          </Card>
+        </RevealSection>
       </ScrollView>
     </KeyboardAvoidingView>
   );

@@ -58,6 +58,7 @@ export function Card({
   className = "",
   containerClassName = "",
   onPress,
+  onLongPress,
   ...rest
 }: CardProps) {
   const { resolvedScheme } = useAppTheme();
@@ -89,7 +90,7 @@ export function Card({
 
   const wrapperClassName = `rounded-2xl border border-border overflow-hidden ${containerClassName}`;
 
-  if (!onPress) {
+  if (!onPress && !onLongPress) {
     return (
       <Animated.View
         className={wrapperClassName}
@@ -107,6 +108,7 @@ export function Card({
       onPressIn={() => pressIn(scale)}
       onPressOut={() => pressOut(scale)}
       onPress={onPress}
+      onLongPress={onLongPress}
       {...rest}
     >
       {content}

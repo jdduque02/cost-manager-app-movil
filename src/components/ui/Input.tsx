@@ -18,6 +18,8 @@ import {
 interface InputProps extends TextInputProps {
   label?: string;
   error?: string;
+  /** Elemento opcional al extremo derecho del campo (p. ej. toggle mostrar/ocultar contraseña). */
+  rightElement?: React.ReactNode;
 }
 
 /**
@@ -26,7 +28,15 @@ interface InputProps extends TextInputProps {
  * withTiming, ver `shakeError`), no keyframes, porque `error` puede pasar de
  * vacío a con-texto varias veces seguidas mientras el usuario corrige.
  */
-export function Input({ label, error, className = "", onFocus, onBlur, ...props }: InputProps) {
+export function Input({
+  label,
+  error,
+  className = "",
+  rightElement,
+  onFocus,
+  onBlur,
+  ...props
+}: InputProps) {
   const { resolvedScheme } = useAppTheme();
   const c = PALETTE[resolvedScheme];
   const reduceMotion = useReducedMotion();
@@ -62,7 +72,10 @@ export function Input({ label, error, className = "", onFocus, onBlur, ...props 
       {label && (
         <Text className="text-sm font-sans-medium text-foreground mb-1.5">{label}</Text>
       )}
-      <Animated.View style={containerStyle} className="h-11 border rounded-md bg-background">
+      <Animated.View
+        style={containerStyle}
+        className="h-11 border rounded-md bg-background flex-row items-center"
+      >
         <TextInput
           className={`flex-1 px-3 text-foreground text-sm font-sans ${className}`}
           placeholderTextColor={PALETTE[resolvedScheme].mutedForeground}
@@ -76,6 +89,7 @@ export function Input({ label, error, className = "", onFocus, onBlur, ...props 
           }}
           {...props}
         />
+        {rightElement}
       </Animated.View>
       {error && <Text className="text-destructive text-xs font-sans mt-1">{error}</Text>}
     </View>
