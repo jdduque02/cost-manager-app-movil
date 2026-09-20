@@ -22,6 +22,12 @@ export interface FinancialObjectiveResponse {
    * null/undefined para los demás tipos.
    */
   months_of_expenses_covered?: number | null;
+  /**
+   * Solo presente en lecturas offline desde SQLite (src/database/local.repository.ts):
+   * indica que el registro tiene cambios pendientes de sincronizar. Las respuestas
+   * que vienen directo del backend (unwrapEnvelope/unwrapList) nunca lo traen.
+   */
+  is_pending_sync?: boolean;
 }
 
 export interface CreateFinancialObjectiveDto {
