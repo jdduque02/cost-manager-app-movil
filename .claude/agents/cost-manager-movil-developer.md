@@ -141,11 +141,25 @@ sugiérele registrarlo desde `brain-sprig` (`scripts/brain.ps1`).
 - **`security-review`** — antes de cerrar cambios en `src/api/client.ts` (interceptor de tokens),
   `expo-secure-store`, o cualquier flujo de auth (`app/(auth)/`) — verifica que `cost-manager-movil-auth`
   la haya invocado antes de dar el cambio por cerrado.
-- **`code-review`** — antes de reportar cualquier feature como terminada, sin importar cuántos
-  sub-agentes participaron.
+- **`ponytail:ponytail-review`** (intensidad `lite`) — sobre el diff de la feature, **antes** de
+  `code-review`: detecta sobre-ingeniería y código que no necesitaba existir.
+- **`code-review`** — siempre **después** de `ponytail:ponytail-review` y antes de reportar cualquier
+  feature como terminada, sin importar cuántos sub-agentes participaron.
+- **`agent-skills:test-driven-development`** (patrón Prove-It) — en bugs de datos o de sincronización:
+  primero el test que falla, luego el arreglo; delégalo a `cost-manager-movil-data`.
+- **`agent-skills:debugging-and-error-recovery`** — cuando un fallo no quede explicado tras una lectura
+  del código.
 - **`dataviz`** — cuando se agregue o modifique una gráfica (`src/components/charts`) o su agregación
   (`chart-data.ts`) — verifica que `cost-manager-movil-charts` la leyó.
 - **No uses las skills `finance:*`** (GAAP/SOX) — no aplican a esta app de finanzas personales colombiana.
+
+**Límite de `ponytail` (crítico en offline-first)**: no puede recortar por concisión la lógica de la cola
+offline (`pending_operations`), reintentos, resolución de conflictos, ni el manejo de
+`expo-secure-store`/auth. Ese código parece redundante y no lo es. Si lo sugiere, **rechaza la sugerencia**
+y anótala en el "Reporte para el brain".
+
+`ponytail:ponytail-review` **no sustituye** la prueba offline ni el gate de calidad de la sección 4.
+Si omites `ponytail:ponytail-review` o `code-review`, di en tu reporte por qué.
 
 ## 4. Calidad y verificación (obligatorio antes de dar por terminado)
 
@@ -153,6 +167,8 @@ sugiérele registrarlo desde `brain-sprig` (`scripts/brain.ps1`).
   `jest.config.js`, no en el campo `"jest"` de `package.json`).
 - Toda pantalla de datos nueva debe probarse también sin conexión (offline) antes de darla por terminada,
   dado el requisito offline-first del producto.
+- Cierre obligatorio de toda feature, en este orden: gate de calidad + prueba offline →
+  `ponytail:ponytail-review` sobre el diff → `code-review` → "Reporte para el brain".
 
 ## Qué NO hacer
 
@@ -162,7 +178,10 @@ sugiérele registrarlo desde `brain-sprig` (`scripts/brain.ps1`).
 - No asumas un arreglo desnudo en respuestas del backend — usa `unwrapEnvelope`/`unwrapList`.
 - No dupliques formateo de moneda fuera de `src/utils/format.ts` / `Money`.
 - No uses `npm`/`yarn`/`npx` en lugar de `pnpm`.
-- No des una feature por terminada sin sus tests, sin verificar offline, sin haber invocado `code-review`
-  y sin el bloque "Reporte para el brain".
+- No des una feature por terminada sin sus tests, sin verificar offline, sin haber invocado
+  `ponytail:ponytail-review` y luego `code-review`, y sin el bloque "Reporte para el brain"; si saltaste
+  alguna de las dos revisiones, explica por qué en el reporte.
+- No aceptes una simplificación de `ponytail` que recorte cola offline, reintentos, resolución de
+  conflictos o manejo de SecureStore/auth.
 - No guardes en `memory/` ni en `brain-sprig` nada que ya sea derivable del código o del historial de git.
 - No escribas ni hagas commit en `brain-sprig`; en este repo, commit solo con confirmación explícita del usuario.

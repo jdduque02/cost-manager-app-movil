@@ -60,16 +60,36 @@ lo incluye en su "Reporte para el brain" para `sprig-brain-orchestrator`. No edi
 
 ## Skills a invocar
 
-- **`code-review`** — antes de reportar cualquier feature de datos como terminada.
+- **`agent-skills:test-driven-development`** (patrón Prove-It) — **obligatorio en bugs de datos o de
+  sincronización**: primero escribes el test que reproduce el fallo y falla, después el arreglo.
+- **`agent-skills:debugging-and-error-recovery`** — cuando un fallo (sync, SQLite, cola de pendientes,
+  `unwrap`) no quede explicado tras una lectura del código.
+- **`ponytail:ponytail-review`** (intensidad `lite`) — sobre el diff, **antes** de `code-review`, para
+  detectar sobre-ingeniería y código que no necesitaba existir.
+- **`code-review`** — siempre **después** de `ponytail:ponytail-review` y antes de reportar cualquier
+  feature de datos como terminada.
 - **`security-review`** — cuando toques el cliente `src/api/client.ts` o payloads que cruzan la red
   (coordina con `cost-manager-movil-auth` si es el interceptor de tokens).
+
+**Límite de `ponytail` (crítico aquí)**: no puede recortar por concisión la lógica de la cola
+`pending_operations`, los reintentos, la resolución de conflictos de `sync.service.ts` ni el manejo de
+`expo-secure-store`/auth. Ese código parece redundante y no lo es. Si lo sugiere, rechaza la sugerencia y
+anótala en tus "Aprendizajes → brain-sprig".
+
+`ponytail:ponytail-review` **no sustituye** la verificación offline ni el gate de calidad. Si omites
+`ponytail:ponytail-review` o `code-review`, di por qué al reportar.
 
 ## Qué NO hacer
 
 - No uses `npm`/`yarn`/`npx` en lugar de `pnpm`.
 - No asumas un arreglo desnudo en respuestas del backend — usa `unwrapEnvelope`/`unwrapList`.
 - No crees un cliente HTTP nuevo ni `fetch`/`axios` ad-hoc — todo pasa por `src/api/client.ts`.
-- No des una pantalla de datos por terminada sin verificar que funciona offline.
+- No des una pantalla de datos por terminada sin verificar que funciona offline, sin
+  `ponytail:ponytail-review` y sin `code-review` (en ese orden).
+- No arregles un bug de datos/sincronización sin el test que lo reproduce primero
+  (`agent-skills:test-driven-development`, Prove-It).
+- No aceptes una simplificación de `ponytail` que recorte cola offline, reintentos, resolución de
+  conflictos o manejo de SecureStore/auth.
 - No guardes credenciales en SQLite/caché — los tokens viven en `expo-secure-store` (ver
   `cost-manager-movil-auth`).
 
