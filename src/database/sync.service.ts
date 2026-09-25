@@ -2,6 +2,7 @@ import * as transactionsApi from "@/api/transactions.api";
 import * as bankingApi from "@/api/banking.api";
 import * as objectivesApi from "@/api/objectives.api";
 import * as empresasApi from "@/api/empresas.api";
+import { REF_TARGETS } from "./local-refs";
 import {
   getPendingOperations,
   deletePendingOperation,
@@ -185,6 +186,15 @@ export async function syncPendingOperations(): Promise<SyncResult> {
     try {
       const { id: serverId } = await handler(op);
       await markEntitySynced(op.entity, op.localId, serverId);
+      if (op.operation === "CREATE" && REF_TARGETS[op.entity]) {
+        // markEntitySynced remapeó en SQLite las referencias al id local de
+        // las operaciones siguientes; `pending` es una copia en memoria.
+        const fresh = (await getPendingOperations()) ?? [];
+        for (const next of pending) {
+          const updated = fresh.find((f) => f.id === next.id);
+          if (updated) next.payload = updated.payload;
+        }
+      }
       await deletePendingOperation(op.id);
       result.synced++;
     } catch {

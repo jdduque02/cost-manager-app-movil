@@ -76,6 +76,40 @@ describe("syncPendingOperations", () => {
     expect(mockDelete).toHaveBeenCalledWith(1);
   });
 
+  it("tras sincronizar una cuenta, las operaciones siguientes usan su id de servidor", async () => {
+    const accountOp = {
+      id: 1,
+      entity: "bank_accounts",
+      operation: "CREATE",
+      localId: "local_acc",
+      retryCount: 0,
+      payload: { userId: 1, bank_name: "B", account_type: "ahorros", account_number: "1234567890", balance: 0 },
+    };
+    const txOp = {
+      id: 2,
+      entity: "transactions",
+      operation: "CREATE",
+      localId: "local_tx",
+      retryCount: 0,
+      payload: { userId: 1, type: "expense", amount: 5, account_id: -123, transaction_date: "2024-01-01" },
+    };
+    // 1ª lectura: cola con el id local. 2ª (tras marcar la cuenta): markEntitySynced
+    // ya remapeó la cola en SQLite, así que la transacción trae el id del servidor.
+    mockGetPending
+      .mockResolvedValueOnce([accountOp, txOp])
+      .mockResolvedValueOnce([accountOp, { ...txOp, payload: { ...txOp.payload, account_id: 500 } }]);
+    mockCreateBankAccount.mockResolvedValueOnce({ id: 500 });
+    mockCreateTransaction.mockResolvedValueOnce({ id: 10 });
+
+    const result = await syncPendingOperations();
+
+    expect(result.synced).toBe(2);
+    expect(mockCreateTransaction).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ account_id: 500 }),
+    );
+  });
+
   it("omite entidades que no están en la whitelist y las elimina", async () => {
     mockGetPending.mockResolvedValueOnce([
       {

@@ -171,6 +171,6 @@ describe("createLocalObjective", () => {
 
     expect(result.months_of_expenses_covered).toBeNull();
     expect(result.type).toBe("emergency_fund");
-    expect(result.id).toBe(99);
+    expect(result.id).toBeLessThan(0);
   });
 });

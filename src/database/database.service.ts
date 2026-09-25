@@ -1,5 +1,6 @@
 import type * as SQLite from "expo-sqlite";
 import { Platform } from "react-native";
+import { remapReferences } from "./local-refs";
 
 let db: SQLite.SQLiteDatabase | null = null;
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -42,6 +43,7 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
         await migrateTransactionsTable(instance);
         await migrateObjectivesTable(instance);
         await rebuildObjectivesTableIfLegacyCheckExists(instance);
+        await migrateLocalIdsToNegative(instance);
         db = instance;
         return instance;
       } catch (error) {
@@ -381,6 +383,42 @@ export async function rebuildObjectivesTableIfLegacyCheckExists(
   } finally {
     await database.execAsync("PRAGMA foreign_keys = ON;");
   }
+}
+
+/**
+ * Bases de dev creadas antes de los ids locales negativos tienen filas
+ * pendientes con id positivo (autoincrement), que pueden chocar con un id del
+ * servidor y ser pisadas por un `INSERT OR REPLACE`. Las renumera a negativo,
+ * remapea las referencias (transacciones, pagos, payloads de la cola) y
+ * enmascara `account_number` en la tabla (el payload de la cola conserva el
+ * real para el sync). Idempotente: sin filas pendientes positivas no hace nada.
+ */
+export async function migrateLocalIdsToNegative(database: SQLite.SQLiteDatabase): Promise<void> {
+  const tables = ["bank_accounts", "financial_objectives", "companies", "transactions"];
+  await database.withTransactionAsync(async () => {
+    await database.execAsync("PRAGMA defer_foreign_keys = ON");
+    for (const table of tables) {
+      // `table` sale de la lista fija de arriba, no de input externo.
+      const rows = await database.getAllAsync<{ id: number }>(
+        `SELECT id FROM ${table} WHERE is_pending_sync = 1 AND id > 0 ORDER BY id`,
+      );
+      if (rows.length === 0) continue;
+      const min = await database.getFirstAsync<{ m: number | null }>(
+        `SELECT MIN(id) AS m FROM ${table}`,
+      );
+      let next = Math.min(0, min?.m ?? 0);
+      for (const { id: oldId } of rows) {
+        next -= 1;
+        await remapReferences(database, table, oldId, next);
+        await database.runAsync(`UPDATE ${table} SET id = ? WHERE id = ?`, [next, oldId]);
+      }
+    }
+    await database.execAsync(`
+      UPDATE bank_accounts
+      SET account_number = CASE WHEN length(account_number) < 4 THEN '****' ELSE '****' || substr(account_number, -4) END
+      WHERE account_number IS NOT NULL AND account_number NOT LIKE '****%'
+    `);
+  });
 }
 
 export async function closeDatabase(): Promise<void> {

@@ -1,4 +1,6 @@
+import type * as SQLite from "expo-sqlite";
 import { getDatabase } from "./database.service";
+import { remapReferences } from "./local-refs";
 import {
   cacheUserProfileSecurely,
   getSecurelyCachedUserProfile,
@@ -192,6 +194,19 @@ function generateLocalId(): string {
   return `local_${Date.now().toString(16)}${rand()}${rand()}`;
 }
 
+/**
+ * Id local para una fila creada offline: siempre negativo y decreciente, así
+ * nunca choca con un id positivo del servidor (`INSERT OR REPLACE` de un fetch
+ * no pisa filas pendientes). Se basa en el reloj para no reutilizar el id de
+ * una fila borrada que aún referencie algún payload pendiente.
+ * Llamar dentro de la misma transacción que el INSERT.
+ */
+async function nextLocalRowId(db: SQLite.SQLiteDatabase, table: string): Promise<number> {
+  // `table` viene de los 4 creadores de abajo (literales), no de input externo.
+  const row = await db.getFirstAsync<{ m: number | null }>(`SELECT MIN(id) AS m FROM ${table}`);
+  return Math.min(-Date.now(), (row?.m ?? 0) - 1);
+}
+
 function now(): string {
   return new Date().toISOString();
 }
@@ -212,6 +227,10 @@ function maskAccountNumber(accountNumber: string): string {
   // Números más cortos que 4 dígitos destaparían el número completo — enmascarar todo.
   if (!accountNumber || accountNumber.length < 4) return "****";
   return `****${accountNumber.slice(-4)}`;
+}
+
+function maskedOrNull(accountNumber: string | null | undefined): string | null {
+  return accountNumber == null ? null : maskAccountNumber(accountNumber);
 }
 
 // ─── Usuario ─────────────────────────────────────────────────────────────────
@@ -414,19 +433,23 @@ export async function createLocalBankAccount(
   const localId = generateLocalId();
   const timestamp = now();
   let rowId = 0;
-  // INSERT + SELECT + enqueue en una sola transacción: si algo falla a mitad,
+  // INSERT + enqueue en una sola transacción: si algo falla a mitad,
   // no queda una fila `is_pending_sync=1` huérfana sin operación en la cola
   // (la cual nunca se sincronizaría — pérdida silenciosa).
   await db.withTransactionAsync(async () => {
+    rowId = await nextLocalRowId(db, "bank_accounts");
     await db.runAsync(
-      `INSERT INTO bank_accounts (local_id, user_id, bank_name, account_type, account_number, balance, currency, is_primary, created_at, updated_at, is_pending_sync)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      `INSERT INTO bank_accounts (id, local_id, user_id, bank_name, account_type, account_number, balance, currency, is_primary, created_at, updated_at, is_pending_sync)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
       [
+        rowId,
         localId,
         userId,
         nz(dto.bank_name),
         nz(dto.account_type),
-        nz(dto.account_number),
+        // En la tabla solo se guarda enmascarado; el payload de la cola
+        // conserva el número real para el sync.
+        maskedOrNull(dto.account_number),
         nz(dto.balance) ?? 0,
         dto.currency ?? "COP",
         dto.is_primary ? 1 : 0,
@@ -434,11 +457,6 @@ export async function createLocalBankAccount(
         timestamp,
       ],
     );
-    const row = await db.getFirstAsync<{ id: number }>(
-      "SELECT id FROM bank_accounts WHERE local_id = ?",
-      [localId],
-    );
-    rowId = row!.id;
     await enqueuePendingOperation(localId, "bank_accounts", "CREATE", {
       userId,
       ...dto,
@@ -485,7 +503,7 @@ export async function updateLocalBankAccount(
     [
       nz(dto.bank_name),
       nz(dto.account_type),
-      nz(dto.account_number),
+      maskedOrNull(dto.account_number),
       nz(dto.balance),
       nz(dto.currency),
       dto.is_primary === undefined ? null : dto.is_primary ? 1 : 0,
@@ -646,13 +664,15 @@ export async function createLocalTransaction(
   const timestamp = now();
   let rowId = 0;
   await db.withTransactionAsync(async () => {
+    rowId = await nextLocalRowId(db, "transactions");
     await db.runAsync(
       `INSERT INTO transactions
-        (local_id, user_id, category_id, subcategory_id, account_id, asset_id, liability_id, objective_id, company_id,
+        (id, local_id, user_id, category_id, subcategory_id, account_id, asset_id, liability_id, objective_id, company_id,
          type, amount, currency, payment_method, is_fixed, fixed_type, frequency, due_day, reminder_days,
          installments, installment_value, source_bank, source_account, description, transaction_date, created_at, updated_at, is_pending_sync)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
       [
+        rowId,
         localId,
         userId,
         dto.category_id ?? null,
@@ -681,11 +701,6 @@ export async function createLocalTransaction(
         timestamp,
       ],
     );
-    const row = await db.getFirstAsync<{ id: number }>(
-      "SELECT id FROM transactions WHERE local_id = ?",
-      [localId],
-    );
-    rowId = row!.id;
     await enqueuePendingOperation(localId, "transactions", "CREATE", {
       userId,
       ...dto,
@@ -896,11 +911,13 @@ export async function createLocalObjective(
   const timestamp = now();
   let rowId = 0;
   await db.withTransactionAsync(async () => {
+    rowId = await nextLocalRowId(db, "financial_objectives");
     await db.runAsync(
       `INSERT INTO financial_objectives
-        (local_id, user_id, name, type, target_amount, current_balance, start_date, end_date, is_completed, created_at, updated_at, is_pending_sync)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)`,
+        (id, local_id, user_id, name, type, target_amount, current_balance, start_date, end_date, is_completed, created_at, updated_at, is_pending_sync)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)`,
       [
+        rowId,
         localId,
         userId,
         dto.name,
@@ -913,11 +930,6 @@ export async function createLocalObjective(
         timestamp,
       ],
     );
-    const row = await db.getFirstAsync<{ id: number }>(
-      "SELECT id FROM financial_objectives WHERE local_id = ?",
-      [localId],
-    );
-    rowId = row!.id;
     await enqueuePendingOperation(localId, "financial_objectives", "CREATE", {
       userId,
       ...dto,
@@ -1063,16 +1075,12 @@ export async function createLocalCompany(
   const timestamp = now();
   let rowId = 0;
   await db.withTransactionAsync(async () => {
+    rowId = await nextLocalRowId(db, "companies");
     await db.runAsync(
-      `INSERT INTO companies (local_id, user_id, name, default_category_id, created_at, updated_at, is_pending_sync)
-       VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      [localId, userId, dto.name, dto.default_category_id ?? null, timestamp, timestamp],
+      `INSERT INTO companies (id, local_id, user_id, name, default_category_id, created_at, updated_at, is_pending_sync)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+      [rowId, localId, userId, dto.name, dto.default_category_id ?? null, timestamp, timestamp],
     );
-    const row = await db.getFirstAsync<{ id: number }>(
-      "SELECT id FROM companies WHERE local_id = ?",
-      [localId],
-    );
-    rowId = row!.id;
     await enqueuePendingOperation(localId, "companies", "CREATE", {
       userId,
       ...dto,
@@ -1266,7 +1274,9 @@ async function collapseOrEnqueueUpdate(
       ...pendingCreate.payload,
       ...changes,
     });
-  } else {
+  } else if (id > 0) {
+    // Un id local (negativo) sin CREATE pendiente no existe en el servidor:
+    // no hay nada que actualizar allá.
     await enqueuePendingOperation(localId, entity, "UPDATE", { ...changes, id });
   }
 }
@@ -1288,7 +1298,7 @@ async function collapseOrEnqueueDelete(
     // Nunca llegó a existir en el servidor: no hace falta el `payload`
     // (id/userId) porque no se enviará ninguna petición de red.
     await deletePendingOperation(pendingCreate.id);
-  } else {
+  } else if (Number(payload.id) > 0) {
     await enqueuePendingOperation(localId, entity, "DELETE", payload);
   }
   const db = await getDatabase();
@@ -1352,6 +1362,12 @@ export async function incrementRetryCount(id: number): Promise<void> {
   );
 }
 
+/**
+ * Marca una fila como sincronizada: su id local pasa a ser el del servidor.
+ * Remapea las referencias a ese id (transacciones, pagos y payloads de la
+ * cola). Si el servidor ya estaba cacheado con ese id (refetch antes de
+ * marcar), gana la fila del servidor y se descarta la local.
+ */
 export async function markEntitySynced(
   entity: string,
   localId: string,
@@ -1371,8 +1387,29 @@ export async function markEntitySynced(
   if (!Number.isInteger(serverId) || serverId <= 0) return;
 
   const db = await getDatabase();
-  await db.runAsync(
-    `UPDATE ${table} SET id = ?, is_pending_sync = 0, local_id = ? WHERE local_id = ?`,
-    [serverId, String(serverId), localId],
+  const row = await db.getFirstAsync<{ id: number }>(
+    `SELECT id FROM ${table} WHERE local_id = ?`,
+    [localId],
   );
+  if (!row) return;
+  const oldId = row.id;
+
+  await db.withTransactionAsync(async () => {
+    if (oldId !== serverId) {
+      // Las FK hijas (objective_payments) se validan al COMMIT, no por sentencia.
+      await db.execAsync("PRAGMA defer_foreign_keys = ON");
+      await remapReferences(db, entity, oldId, serverId);
+    }
+    const serverRow =
+      oldId !== serverId &&
+      (await db.getFirstAsync(`SELECT 1 FROM ${table} WHERE id = ?`, [serverId]));
+    if (serverRow) {
+      await db.runAsync(`DELETE FROM ${table} WHERE local_id = ?`, [localId]);
+    } else {
+      await db.runAsync(
+        `UPDATE ${table} SET id = ?, is_pending_sync = 0, local_id = ? WHERE local_id = ?`,
+        [serverId, String(serverId), localId],
+      );
+    }
+  });
 }

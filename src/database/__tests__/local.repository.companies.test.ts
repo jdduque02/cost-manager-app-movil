@@ -117,8 +117,8 @@ describe("createLocalCompany", () => {
     );
     const [, params] = mockRunAsync.mock.calls[0];
     // is_pending_sync = 1 está hardcodeado en el VALUES, no como parámetro.
-    expect(mockRunAsync.mock.calls[0][0]).toContain("VALUES (?, ?, ?, ?, ?, ?, 1)");
-    expect(params).toHaveLength(6);
+    expect(mockRunAsync.mock.calls[0][0]).toContain("VALUES (?, ?, ?, ?, ?, ?, ?, 1)");
+    expect(params).toHaveLength(7);
   });
 
   it("encola una operación CREATE pendiente con el dto y el userId", async () => {
@@ -135,11 +135,11 @@ describe("createLocalCompany", () => {
     expect(params[2]).toBe("CREATE");
   });
 
-  it("retorna la empresa con el id real asignado por SQLite y default_category_id null si no se envía", async () => {
+  it("retorna la empresa con un id local negativo y default_category_id null si no se envía", async () => {
     const result = await createLocalCompany(5, { name: "Sin categoría" });
 
+    expect(result.id).toBeLessThan(0);
     expect(result).toMatchObject({
-      id: 42,
       user_id: 5,
       name: "Sin categoría",
       default_category_id: null,
