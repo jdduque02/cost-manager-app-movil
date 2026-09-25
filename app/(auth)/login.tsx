@@ -137,7 +137,7 @@ export default function LoginScreen() {
 
         {!isConnected && (
           <View className="bg-warning/15 rounded-xl p-3 mb-4 flex-row items-center">
-            <Text className="text-warning-foreground text-sm font-sans-semibold">
+            <Text className="text-warning text-sm font-sans-semibold">
               Sin conexion - modo offline disponible
             </Text>
           </View>
