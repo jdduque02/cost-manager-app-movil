@@ -150,6 +150,32 @@ export async function wipeGuestData(): Promise<void> {
   });
 }
 
+/**
+ * Borra los datos de cualquier usuario y toda la cola `pending_operations`.
+ * Conserva `categories` (catálogo del sistema, no es dato del usuario).
+ * OJO: descarta operaciones sin sincronizar — llamar solo cuando ya no
+ * haya nada que enviar (p. ej. tras sincronizar al cerrar sesión).
+ */
+export async function wipeLocalUserData(): Promise<void> {
+  const db = await getDatabase();
+  const USER_TABLES = [
+    "transactions",
+    "bank_accounts",
+    "financial_objectives",
+    "companies",
+    "financial_assets",
+    "financial_liabilities",
+    "subcategories",
+    "objective_payments",
+    "pending_operations",
+  ] as const;
+
+  await db.withTransactionAsync(async () => {
+    // Lista fija de arriba, no input externo: interpolar el nombre es seguro.
+    for (const table of USER_TABLES) await db.runAsync(`DELETE FROM ${table}`);
+  });
+}
+
 // ─── Utilidad ───────────────────────────────────────────────────────────────
 
 /**
