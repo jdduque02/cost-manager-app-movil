@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/utils/toast";
+import { LEGAL_VERSION, openLegal } from "@/utils/legal";
 import {
   sanitizeInput,
   validateEmail,
@@ -20,6 +21,7 @@ export default function RegisterScreen() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [accepted, setAccepted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,6 +57,14 @@ export default function RegisterScreen() {
       return;
     }
 
+    if (!accepted) {
+      toast.error(
+        "Aceptacion requerida",
+        "Debes aceptar los terminos y la politica de privacidad, y confirmar que eres mayor de 18 anos",
+      );
+      return;
+    }
+
     try {
       setError(null);
       setIsLoading(true);
@@ -63,6 +73,7 @@ export default function RegisterScreen() {
         email: cleanEmail,
         password,
         full_name: fullName,
+        accepted_terms_version: LEGAL_VERSION,
         locale: "es",
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? "America/Bogota",
         metadata: { prefered_theme: "dark", notifications: true },
@@ -126,6 +137,43 @@ export default function RegisterScreen() {
             placeholder="Repite tu contrasena"
             secureTextEntry
           />
+
+          <Pressable
+            onPress={() => setAccepted((v) => !v)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: accepted }}
+            accessibilityLabel="Soy mayor de 18 años, acepto los términos y condiciones y autorizo el tratamiento de mis datos personales"
+            className="flex-row items-start mb-4"
+          >
+            <View
+              className={`w-6 h-6 rounded border items-center justify-center mr-3 ${
+                accepted ? "bg-primary border-primary" : "border-input"
+              }`}
+            >
+              {accepted ? (
+                <Text className="text-primary-foreground text-sm font-sans-bold">✓</Text>
+              ) : null}
+            </View>
+            <Text className="flex-1 text-sm font-sans text-foreground">
+              Soy mayor de 18 años, acepto los{" "}
+              <Text
+                accessibilityRole="link"
+                className="text-primary font-sans-bold"
+                onPress={() => openLegal("terminos")}
+              >
+                Términos y Condiciones
+              </Text>{" "}
+              y autorizo el tratamiento de mis datos personales conforme a la{" "}
+              <Text
+                accessibilityRole="link"
+                className="text-primary font-sans-bold"
+                onPress={() => openLegal("privacidad")}
+              >
+                Política de Privacidad
+              </Text>
+              .
+            </Text>
+          </Pressable>
 
           <Button size="lg" onPress={handleRegister} loading={isLoading}>
             Crear cuenta

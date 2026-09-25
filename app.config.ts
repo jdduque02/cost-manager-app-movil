@@ -5,6 +5,9 @@ import { ExpoConfig } from "expo/config";
 // ya no hace falta copiar el valor a mano en un app.json estático.
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:3000/api/v1";
 
+// URL pública de Sprig-web: ahí viven la política de privacidad, los términos y las cookies.
+const WEB_URL = process.env.WEB_URL ?? "http://localhost:3100";
+
 const config: ExpoConfig = {
   name: "Cost Manager",
   slug: "cost-manager-mobile",
@@ -59,6 +62,7 @@ const config: ExpoConfig = {
   },
   extra: {
     API_BASE_URL,
+    WEB_URL,
     eas: {
       projectId: "your-project-id",
     },
