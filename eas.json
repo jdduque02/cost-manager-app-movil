@@ -1,0 +1,36 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "API_BASE_URL": "https://api.sprig.fans/api/v1",
+        "WEB_URL": "https://sprig.fans"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "API_BASE_URL": "https://api.sprig.fans/api/v1",
+        "WEB_URL": "https://sprig.fans"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "API_BASE_URL": "https://api.sprig.fans/api/v1",
+        "WEB_URL": "https://sprig.fans"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

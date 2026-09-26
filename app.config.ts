@@ -8,24 +8,28 @@ const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:3000/api/v1";
 // URL pública de Sprig-web: ahí viven la política de privacidad, los términos y las cookies.
 const WEB_URL = process.env.WEB_URL ?? "http://localhost:3100";
 
+// Lo fija `eas init` (vía env/EAS secret EAS_PROJECT_ID). Sin él, EAS Build
+// falla con un mensaje claro en vez de apuntar a un proyecto inventado.
+const EAS_PROJECT_ID = process.env.EAS_PROJECT_ID;
+
 const config: ExpoConfig = {
-  name: "Cost Manager",
-  slug: "cost-manager-mobile",
+  name: "Sprig",
+  slug: "sprig",
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/sprig/sprig_app_icon.png",
-  scheme: "costmanager",
+  scheme: "sprig",
   userInterfaceStyle: "automatic",
   ios: {
     supportsTablet: true,
-    bundleIdentifier: "com.costmanager.mobile",
+    bundleIdentifier: "fans.sprig.app",
   },
   android: {
     adaptiveIcon: {
       foregroundImage: "./assets/sprig/sprig_app_icon_light.png",
       backgroundColor: "#1E5C3A",
     },
-    package: "com.costmanager.mobile",
+    package: "fans.sprig.app",
   },
   web: {
     bundler: "metro",
@@ -63,9 +67,7 @@ const config: ExpoConfig = {
   extra: {
     API_BASE_URL,
     WEB_URL,
-    eas: {
-      projectId: "your-project-id",
-    },
+    ...(EAS_PROJECT_ID ? { eas: { projectId: EAS_PROJECT_ID } } : {}),
   },
 };
 
