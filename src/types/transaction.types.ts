@@ -101,6 +101,27 @@ export interface TransactionQueryDto {
   limit?: number;
 }
 
+export interface TransactionSummaryQuery {
+  date_from: string;
+  date_to: string;
+  group_by?: "day" | "week" | "month";
+}
+
+export interface TransactionSummaryAmounts {
+  income: number;
+  expenses: number;
+  investments: number;
+  count: number;
+}
+
+/** GET /users/:id/transactions/summary (llega envuelto como `data: [summary]`). */
+export interface TransactionSummary {
+  group_by?: "day" | "week" | "month";
+  totals: TransactionSummaryAmounts;
+  series: (TransactionSummaryAmounts & { key: string; label: string })[];
+  by_category: (TransactionSummaryAmounts & { category_id: number })[];
+}
+
 export interface PaginatedTransactions {
   data: TransactionRecordResponse[];
   total: number;

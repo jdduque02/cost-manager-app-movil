@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore } from "@/store/auth.store";
 import { useOfflineQuery } from "@/hooks/useOfflineQuery";
 import { apiClient } from "@/api/client";
+import * as transactionsApi from "@/api/transactions.api";
 import * as catalogApi from "@/api/catalog.api";
 import * as usersApi from "@/api/users.api";
 import { Card } from "@/components/ui/Card";
@@ -115,24 +116,12 @@ export default function IntelligenceScreen() {
     {
       queryKey: ["intelligence-month-summary", userId, monthStart, today],
       queryFn: async () => {
-        const { data } = await apiClient.get<TransactionSummary>(
-          `/users/${userId}/transactions/summary`,
-          { params: { date_from: monthStart, date_to: today, group_by: "month" } },
-        );
-        return {
-          totals: {
-            income: Number(data.totals?.income ?? 0),
-            expenses: Number(data.totals?.expenses ?? 0),
-            investments: Number(data.totals?.investments ?? 0),
-            count: Number(data.totals?.count ?? 0),
-          },
-          by_category: (data.by_category ?? []).map((c) => ({
-            ...c,
-            income: Number(c.income ?? 0),
-            expenses: Number(c.expenses ?? 0),
-            investments: Number(c.investments ?? 0),
-          })),
-        };
+        const s = await transactionsApi.getTransactionSummary(userId as number, {
+          date_from: monthStart,
+          date_to: today,
+          group_by: "month",
+        });
+        return { totals: s.totals, by_category: s.by_category };
       },
       enabled: !!userId,
     },

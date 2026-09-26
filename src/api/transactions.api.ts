@@ -6,6 +6,9 @@ import type {
   TransactionQueryDto,
   PaginatedTransactions,
   CloneTransactionDto,
+  TransactionSummary,
+  TransactionSummaryAmounts,
+  TransactionSummaryQuery,
 } from "@/types/transaction.types";
 
 function normalizeTransaction(
@@ -35,6 +38,39 @@ export async function getTransactions(
     ? data.length
     : Number((data as { total?: number }).total ?? items.length);
   return { data: items.map(normalizeTransaction), total };
+}
+
+function toAmounts<T extends object>(v: T | undefined): T & TransactionSummaryAmounts {
+  const a = (v ?? {}) as Partial<TransactionSummaryAmounts>;
+  return {
+    ...(v as T),
+    income: Number(a.income ?? 0),
+    expenses: Number(a.expenses ?? 0),
+    investments: Number(a.investments ?? 0),
+    count: Number(a.count ?? 0),
+  };
+}
+
+/**
+ * El API manda el resumen como `data: [summary]` y el interceptor deja el
+ * arreglo: leer `.totals` directo sobre él daba todo en 0. Montos numeric de
+ * Postgres llegan como string → Number.
+ */
+export async function getTransactionSummary(
+  userId: number,
+  query: TransactionSummaryQuery,
+): Promise<TransactionSummary> {
+  const { data } = await apiClient.get<TransactionSummary | TransactionSummary[]>(
+    `/users/${userId}/transactions/summary`,
+    { params: query },
+  );
+  const s = (Array.isArray(data) ? data[0] : data) as Partial<TransactionSummary> | undefined;
+  return {
+    group_by: s?.group_by ?? query.group_by,
+    totals: toAmounts(s?.totals),
+    series: (s?.series ?? []).map(toAmounts),
+    by_category: (s?.by_category ?? []).map(toAmounts),
+  };
 }
 
 export async function getTransaction(

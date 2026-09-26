@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { View, Text, ScrollView, Pressable } from "react-native";
 import { useAuthStore } from "@/store/auth.store";
 import { useOfflineQuery } from "@/hooks/useOfflineQuery";
-import { apiClient } from "@/api/client";
+import * as transactionsApi from "@/api/transactions.api";
 import { getLocalTransactions } from "@/database/local.repository";
 import { formatCurrency } from "@/utils/format";
 import { Card } from "@/components/ui/Card";
@@ -185,32 +185,12 @@ export default function ReportsScreen() {
     {
       queryKey: ["reports-summary", userId, preset, groupBy, dateRange],
       queryFn: async () => {
-        const { data } = await apiClient.get<TransactionSummary>(
-          `/users/${userId}/transactions/summary`,
-          {
-            params: {
-              date_from: dateRange.date_from,
-              date_to: dateRange.date_to,
-              group_by: groupBy,
-            },
-          },
-        );
-        return {
-          ...data,
-          totals: {
-            income: Number(data.totals?.income ?? 0),
-            expenses: Number(data.totals?.expenses ?? 0),
-            investments: Number(data.totals?.investments ?? 0),
-            count: Number(data.totals?.count ?? 0),
-          },
-          series: (data.series ?? []).map((s) => ({
-            ...s,
-            income: Number(s.income ?? 0),
-            expenses: Number(s.expenses ?? 0),
-            investments: Number(s.investments ?? 0),
-            count: Number(s.count ?? 0),
-          })),
-        };
+        const s = await transactionsApi.getTransactionSummary(userId as number, {
+          date_from: dateRange.date_from,
+          date_to: dateRange.date_to,
+          group_by: groupBy,
+        });
+        return { group_by: groupBy, totals: s.totals, series: s.series };
       },
       enabled: !!userId,
     },
@@ -220,16 +200,12 @@ export default function ReportsScreen() {
   const { data: transactions, isLoading: txLoading } = useOfflineQuery<{ data: TransactionItem[] }>(
     {
       queryKey: ["reports-transactions", userId, dateRange],
-      queryFn: async () => {
-        const { data } = await apiClient.get<{ data: TransactionItem[]; total: number }>(
-          `/users/${userId}/transactions`,
-          {
-            params: { date_from: dateRange.date_from, date_to: dateRange.date_to, limit: 100 },
-            preservePaginated: true,
-          },
-        );
-        return data;
-      },
+      queryFn: () =>
+        transactionsApi.getTransactions(userId as number, {
+          date_from: dateRange.date_from,
+          date_to: dateRange.date_to,
+          limit: 100,
+        }),
       enabled: !!userId,
     },
     async () => {
