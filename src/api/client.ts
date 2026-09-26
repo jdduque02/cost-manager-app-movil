@@ -1,4 +1,5 @@
 import axios, {
+  isAxiosError,
   AxiosInstance,
   InternalAxiosRequestConfig,
   AxiosResponse,
@@ -66,6 +67,56 @@ export class SessionExpiredError extends Error {
 
 export function isSessionExpiredError(err: unknown): err is SessionExpiredError {
   return err instanceof SessionExpiredError;
+}
+
+/**
+ * - network: sin respuesta (DNS, TLS, timeout, conexión rechazada).
+ * - blocked: 403 cuyo cuerpo no es JSON del API → lo cortó Cloud Armor
+ *   (allowlist de IPs) antes de llegar al backend.
+ * - client: resto de 4xx (el API rechazó la petición; reintentar no sirve).
+ * - server: 5xx, 408 y 429 (transitorios).
+ */
+export type ApiErrorKind = "network" | "blocked" | "client" | "server";
+
+export const BLOCKED_NETWORK_MESSAGE =
+  "Red no autorizada: el servidor de Sprig no acepta conexiones desde esta red. Prueba con otra red.";
+
+/** Todo cuerpo JSON del API (éxito o error del HttpExceptionFilter) trae `timestamp`. */
+function isApiJsonBody(body: unknown): boolean {
+  return body !== null && typeof body === "object" && "timestamp" in body;
+}
+
+/** `null` si no es un error HTTP de axios (p. ej. SessionExpiredError o un bug local). */
+export function classifyApiError(err: unknown): ApiErrorKind | null {
+  if (!isAxiosError(err)) return null;
+  const res = err.response;
+  if (!res) return "network";
+  // 408/429 son transitorios: reintentar más tarde sí puede salir bien.
+  if (res.status >= 500 || res.status === 408 || res.status === 429) return "server";
+  if (res.status === 403 && !isApiJsonBody(res.data)) return "blocked";
+  return "client";
+}
+
+/** Solo lo que puede salir bien más tarde va a la cola offline: red y 5xx. */
+export function isQueueableError(err: unknown): boolean {
+  const kind = classifyApiError(err);
+  return kind === "network" || kind === "server";
+}
+
+// El API a veces manda la clave i18n sin traducir ("auth.CREDENTIALS_INVALID")
+// o `message: ""` (validación): ninguna de las dos sirve al usuario.
+const UNTRANSLATED_I18N_KEY = /^[a-z_]+\.[A-Z0-9_]+$/;
+
+/** Mensaje para el usuario: bloqueo de red, `message` del API o `fallback`. */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  if (classifyApiError(err) === "blocked") return BLOCKED_NETWORK_MESSAGE;
+  if (isAxiosError(err)) {
+    const message = (err.response?.data as { message?: unknown } | undefined)?.message;
+    return typeof message === "string" && message && !UNTRANSLATED_I18N_KEY.test(message)
+      ? message
+      : fallback;
+  }
+  return err instanceof Error && err.message ? err.message : fallback;
 }
 
 // Evita emitir el evento de sesión expirada más de una vez cuando varias
@@ -320,16 +371,14 @@ apiClient.interceptors.response.use(
       status: error.response?.status,
     });
 
-    // Los endpoints de auth (login/encrypt/refresh) nunca tienen una "sesión"
+    // Los endpoints de auth (login/refresh) nunca tienen una "sesión"
     // que pueda expirar todavía — un 401 ahí es credenciales inválidas (o un
     // refresh cuyo token ya rotó), no expiración. Dejar pasar el error tal
     // cual. Excluir /auth/refresh evita que auth.api.refresh() (que sí pasa
     // por apiClient) re-entre al interceptor y recursione.
     const url: string = originalRequest?.url ?? "";
     const isAuthEndpoint =
-      url.includes("/auth/login") ||
-      url.includes("/auth/encrypt") ||
-      url.includes("/auth/refresh");
+      url.includes("/auth/login") || url.includes("/auth/refresh");
 
     if (
       error.response?.status === 401 &&
