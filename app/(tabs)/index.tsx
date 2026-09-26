@@ -65,6 +65,7 @@ export default function DashboardScreen() {
     isLoading: loadingTx,
     refetch: refetchTx,
     isUsingFallback: txUsingFallback,
+    isNetworkBlocked: txBlocked,
   } = useOfflineQuery(
     {
       // Sufijo "dashboard" para no compartir cache con el query key de la
@@ -90,6 +91,7 @@ export default function DashboardScreen() {
     isLoading: loadingAcc,
     refetch: refetchAcc,
     isUsingFallback: accUsingFallback,
+    isNetworkBlocked: accBlocked,
   } = useOfflineQuery(
     {
       queryKey: ["bank-accounts", userId],
@@ -169,6 +171,7 @@ export default function DashboardScreen() {
     >
       {isUsingFallback && (
         <StaleDataBanner
+          blocked={txBlocked || accBlocked}
           onRetry={() => {
             refetchTx();
             refetchAcc();

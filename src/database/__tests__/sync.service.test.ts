@@ -5,11 +5,13 @@
  * whitelist de entidades/operaciones, reintentos máximos, y manejo de handlers.
  */
 
-import { syncPendingOperations } from "../sync.service";
+import { AxiosError, AxiosHeaders } from "axios";
+import { syncPendingOperations, MAX_RETRIES } from "../sync.service";
 import {
   getPendingOperations,
   deletePendingOperation,
   incrementRetryCount,
+  markOperationFailed,
   markEntitySynced,
 } from "../local.repository";
 import * as transactionsApi from "@/api/transactions.api";
@@ -23,6 +25,7 @@ jest.mock("../local.repository", () => ({
   getPendingOperations: jest.fn(),
   deletePendingOperation: jest.fn(),
   incrementRetryCount: jest.fn(),
+  markOperationFailed: jest.fn(),
   markEntitySynced: jest.fn(),
 }));
 
@@ -30,6 +33,7 @@ const mockGetPending = getPendingOperations as jest.Mock;
 const mockDelete = deletePendingOperation as jest.Mock;
 const mockIncRetry = incrementRetryCount as jest.Mock;
 const mockMarkSynced = markEntitySynced as jest.Mock;
+const mockMarkFailed = markOperationFailed as jest.Mock;
 const mockCreateTransaction = transactionsApi.createTransaction as jest.Mock;
 const mockCreateBankAccount = bankingApi.createBankAccount as jest.Mock;
 const mockCreateObjective = objectivesApi.createObjective as jest.Mock;
@@ -39,6 +43,7 @@ beforeEach(() => {
   mockDelete.mockResolvedValue(undefined);
   mockIncRetry.mockResolvedValue(undefined);
   mockMarkSynced.mockResolvedValue(undefined);
+  mockMarkFailed.mockResolvedValue(undefined);
 });
 
 // ─── syncPendingOperations ────────────────────────────────────────────────────
@@ -189,6 +194,63 @@ describe("syncPendingOperations", () => {
     expect(result.failed).toBe(1);
     expect(mockIncRetry).toHaveBeenCalledWith(2);
     expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  describe("rechazo 4xx vs fallo transitorio", () => {
+    const op = {
+      id: 7,
+      entity: "bank_accounts",
+      operation: "CREATE",
+      localId: "-4",
+      retryCount: 0,
+      lastError: null,
+      payload: { userId: 1, localId: "-4", bank_name: "X" },
+    };
+    const httpError = (status: number, data: unknown) =>
+      new AxiosError(`status ${status}`, "ERR_BAD_REQUEST", undefined, null, {
+        status,
+        statusText: "",
+        data,
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      });
+
+    it("un 4xx marca la operación como fallida con su motivo, sin borrarla ni sumar reintento", async () => {
+      mockGetPending.mockResolvedValueOnce([op]);
+      mockCreateBankAccount.mockRejectedValueOnce(
+        httpError(422, { status: 422, message: "Cuenta duplicada", timestamp: "t" }),
+      );
+
+      const result = await syncPendingOperations();
+
+      expect(mockMarkFailed).toHaveBeenCalledWith(7, "Cuenta duplicada", MAX_RETRIES);
+      expect(mockIncRetry).not.toHaveBeenCalled();
+      expect(mockDelete).not.toHaveBeenCalled();
+      expect(result.failed).toBe(1);
+    });
+
+    it("sin message del API usa un motivo con el código HTTP", async () => {
+      mockGetPending.mockResolvedValueOnce([op]);
+      mockCreateBankAccount.mockRejectedValueOnce(httpError(404, { status: 404, timestamp: "t" }));
+
+      await syncPendingOperations();
+
+      expect(mockMarkFailed).toHaveBeenCalledWith(7, expect.stringContaining("404"), MAX_RETRIES);
+    });
+
+    it.each([
+      ["red", new AxiosError("Network Error", "ERR_NETWORK")],
+      ["5xx", httpError(503, "unavailable")],
+      ["Cloud Armor", httpError(403, "<html>403</html>")],
+    ])("%s cuenta un reintento y no marca fallo permanente", async (_label, err) => {
+      mockGetPending.mockResolvedValueOnce([op]);
+      mockCreateBankAccount.mockRejectedValueOnce(err);
+
+      await syncPendingOperations();
+
+      expect(mockIncRetry).toHaveBeenCalledWith(7);
+      expect(mockMarkFailed).not.toHaveBeenCalled();
+    });
   });
 
   it("retorna { synced: 0, failed: 0, skipped: 0 } si no hay operaciones", async () => {

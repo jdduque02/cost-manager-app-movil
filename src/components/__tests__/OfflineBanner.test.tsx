@@ -27,8 +27,11 @@ function setupOfflineStore(overrides: {
   isOnline?: boolean;
   isSyncing?: boolean;
   pendingCount?: number;
+  skippedCount?: number;
+  stuckReason?: string | null;
   setOnlineStatus?: jest.Mock;
   sync?: jest.Mock;
+  retryStuck?: jest.Mock;
 }) {
   const defaults = {
     isOnline: true,
@@ -106,5 +109,25 @@ describe("OfflineBanner", () => {
     fireEvent.press(screen.getByText(/Sincronizar/i));
 
     expect(mockSyncFn).toHaveBeenCalled();
+  });
+
+  it("con operaciones atascadas muestra el motivo y 'Reintentar' llama a retryStuck", () => {
+    const retryStuck = jest.fn();
+    const sync = jest.fn();
+    setupOfflineStore({
+      isOnline: true,
+      pendingCount: 2,
+      skippedCount: 1,
+      stuckReason: "Cuenta duplicada",
+      retryStuck,
+      sync,
+    });
+
+    render(<OfflineBanner />);
+
+    expect(screen.getByText(/1 cambio\(s\) no se pudieron sincronizar: Cuenta duplicada/)).toBeTruthy();
+    fireEvent.press(screen.getByText("Reintentar"));
+    expect(retryStuck).toHaveBeenCalledTimes(1);
+    expect(sync).not.toHaveBeenCalled();
   });
 });

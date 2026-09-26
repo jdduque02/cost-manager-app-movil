@@ -101,6 +101,7 @@ export default function BankingScreen() {
     isLoading: loadingAccounts,
     refetch: refetchAccounts,
     isUsingFallback: accountsUsingFallback,
+    isNetworkBlocked: accountsBlocked,
   } = useOfflineQuery(
     {
       queryKey: ["bank-accounts", userId],
@@ -180,6 +181,9 @@ export default function BankingScreen() {
       queryClient.invalidateQueries({ queryKey: ["bank-accounts", userId] });
       toast.success("Cuenta eliminada");
     },
+    onError: (err: unknown) => {
+      toast.error("Error al eliminar cuenta", err instanceof Error ? err.message : undefined);
+    },
   });
 
   function handleCreateAccount() {
@@ -224,7 +228,9 @@ export default function BankingScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      {accountsUsingFallback && <StaleDataBanner onRetry={refetchAll} />}
+      {accountsUsingFallback && (
+        <StaleDataBanner onRetry={refetchAll} blocked={accountsBlocked} />
+      )}
       <FlatList
         data={accounts ?? []}
         keyExtractor={(item) => String(item.id)}

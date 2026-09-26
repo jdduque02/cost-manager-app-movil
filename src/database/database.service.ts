@@ -42,6 +42,7 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
         await initSchema(instance);
         await migrateTransactionsTable(instance);
         await migrateObjectivesTable(instance);
+        await migratePendingOperationsTable(instance);
         await rebuildObjectivesTableIfLegacyCheckExists(instance);
         await migrateLocalIdsToNegative(instance);
         db = instance;
@@ -238,9 +239,23 @@ async function initSchema(database: SQLite.SQLiteDatabase): Promise<void> {
       operation TEXT NOT NULL CHECK(operation IN ('CREATE','UPDATE','DELETE')),
       payload TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      retry_count INTEGER DEFAULT 0
+      retry_count INTEGER DEFAULT 0,
+      -- Motivo del último rechazo 4xx del servidor (NULL = sin error permanente)
+      last_error TEXT
     );
   `);
+}
+
+/** Agrega `pending_operations.last_error` en instalaciones previas (idempotente, sin perder la cola). */
+export async function migratePendingOperationsTable(
+  database: SQLite.SQLiteDatabase,
+): Promise<void> {
+  const columns = await database.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(pending_operations)",
+  );
+  if (!columns.some((c) => c.name === "last_error")) {
+    await database.execAsync("ALTER TABLE pending_operations ADD COLUMN last_error TEXT");
+  }
 }
 
 /**

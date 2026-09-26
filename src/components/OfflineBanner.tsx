@@ -11,7 +11,8 @@ import { WifiOff, RefreshCw } from "@/components/ui/icons";
  * mismo valor).
  */
 export function OfflineBanner() {
-  const { isOnline, isSyncing, pendingCount, sync } = useOfflineStore();
+  const { isOnline, isSyncing, pendingCount, skippedCount, stuckReason, sync, retryStuck } =
+    useOfflineStore();
   const { resolvedScheme } = useAppTheme();
   const c = PALETTE[resolvedScheme];
 
@@ -29,6 +30,25 @@ export function OfflineBanner() {
             <Text className="text-xs font-sans-bold text-warning-foreground">{pendingCount}</Text>
           </View>
         )}
+      </View>
+    );
+  }
+
+  // Atascadas (agotaron reintentos o el servidor las rechazó con 4xx): el
+  // sync automático las salta, así que sin este botón nunca saldrían.
+  if (skippedCount > 0 && !isSyncing) {
+    return (
+      <View className="bg-warning px-4 py-2 flex-row items-center gap-2">
+        <Text
+          className="flex-1 text-xs font-sans-medium text-warning-foreground"
+          numberOfLines={2}
+        >
+          {`${skippedCount} cambio(s) no se pudieron sincronizar${stuckReason ? `: ${stuckReason}` : ""}`}
+        </Text>
+        <Pressable onPress={() => retryStuck()} className="flex-row items-center gap-1">
+          <RefreshCw size={13} color={c.warningForeground} />
+          <Text className="text-xs font-sans-bold text-warning-foreground">Reintentar</Text>
+        </Pressable>
       </View>
     );
   }

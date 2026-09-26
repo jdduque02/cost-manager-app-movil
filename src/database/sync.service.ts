@@ -2,11 +2,14 @@ import * as transactionsApi from "@/api/transactions.api";
 import * as bankingApi from "@/api/banking.api";
 import * as objectivesApi from "@/api/objectives.api";
 import * as empresasApi from "@/api/empresas.api";
+import { isAxiosError } from "axios";
+import { apiErrorMessage, classifyApiError } from "@/api/client";
 import { REF_TARGETS } from "./local-refs";
 import {
   getPendingOperations,
   deletePendingOperation,
   incrementRetryCount,
+  markOperationFailed,
   markEntitySynced,
   type PendingOperation,
 } from "./local.repository";
@@ -143,8 +146,9 @@ const ALLOWED_OPERATIONS = new Set(["CREATE", "UPDATE", "DELETE"]);
 /**
  * Resultado de una ejecución de sincronización.
  * - synced: operaciones enviadas al servidor exitosamente.
- * - failed: operaciones que fallaron (se incrementa su retryCount).
- * - skipped: operaciones que superaron el límite de reintentos.
+ * - failed: operaciones que fallaron (red/5xx: +1 retryCount; 4xx: quedan
+ *   atascadas con `lastError`).
+ * - skipped: operaciones atascadas (límite de reintentos o rechazo 4xx).
  */
 export interface SyncResult {
   synced: number;
@@ -197,8 +201,20 @@ export async function syncPendingOperations(): Promise<SyncResult> {
       }
       await deletePendingOperation(op.id);
       result.synced++;
-    } catch {
-      await incrementRetryCount(op.id);
+    } catch (err) {
+      // 4xx: reintentar daría el mismo rechazo → queda atascada con su motivo
+      // hasta que el usuario pulse "Reintentar". Red, 5xx, bloqueo de Cloud
+      // Armor o sesión expirada son transitorios: cuentan un reintento más.
+      if (classifyApiError(err) === "client") {
+        const status = isAxiosError(err) ? err.response?.status : undefined;
+        await markOperationFailed(
+          op.id,
+          apiErrorMessage(err, `El servidor rechazó el cambio (HTTP ${status ?? "4xx"})`),
+          MAX_RETRIES,
+        );
+      } else {
+        await incrementRetryCount(op.id);
+      }
       result.failed++;
     }
   }

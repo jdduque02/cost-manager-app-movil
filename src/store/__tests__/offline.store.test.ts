@@ -6,18 +6,21 @@
 
 import { useOfflineStore, stopPeriodicSync } from "../offline.store";
 import { syncPendingOperations } from "@/database/sync.service";
-import { getPendingOperations } from "@/database/local.repository";
+import { getPendingOperations, resetStuckOperations } from "@/database/local.repository";
 
 jest.mock("@/database/sync.service", () => ({
   syncPendingOperations: jest.fn(),
+  MAX_RETRIES: 3,
 }));
 
 jest.mock("@/database/local.repository", () => ({
   getPendingOperations: jest.fn(),
+  resetStuckOperations: jest.fn(),
 }));
 
 const mockSync = syncPendingOperations as jest.Mock;
 const mockGetPending = getPendingOperations as jest.Mock;
+const mockResetStuck = resetStuckOperations as jest.Mock;
 
 const mockSyncResult = { synced: 2, failed: 0, skipped: 0 };
 
@@ -145,5 +148,41 @@ describe("refreshPendingCount", () => {
 
     // No debe lanzar y el count previo puede mantenerse
     expect(useOfflineStore.getState().pendingCount).toBe(5);
+  });
+
+  it("cuenta como atascadas las que agotaron reintentos y expone el motivo del 4xx", async () => {
+    mockGetPending.mockResolvedValueOnce([
+      { id: 1, retryCount: 0, lastError: null },
+      { id: 2, retryCount: 3, lastError: null },
+      { id: 3, retryCount: 3, lastError: "Cuenta duplicada" },
+    ]);
+
+    await useOfflineStore.getState().refreshPendingCount();
+
+    expect(useOfflineStore.getState().skippedCount).toBe(2);
+    expect(useOfflineStore.getState().stuckReason).toBe("Cuenta duplicada");
+  });
+});
+
+// ─── retryStuck ───────────────────────────────────────────────────────────────
+
+describe("retryStuck", () => {
+  it("reinicia el contador de las atascadas (sin borrarlas) y sincroniza", async () => {
+    mockResetStuck.mockResolvedValueOnce(undefined);
+    mockSync.mockResolvedValueOnce(mockSyncResult);
+    mockGetPending.mockResolvedValue([]);
+
+    const result = await useOfflineStore.getState().retryStuck();
+
+    expect(mockResetStuck).toHaveBeenCalledWith(3);
+    expect(mockSync).toHaveBeenCalledTimes(1);
+    expect(result).toEqual(mockSyncResult);
+  });
+
+  it("no hace nada si ya hay una sincronización en curso", async () => {
+    useOfflineStore.setState({ isSyncing: true });
+
+    expect(await useOfflineStore.getState().retryStuck()).toBeNull();
+    expect(mockResetStuck).not.toHaveBeenCalled();
   });
 });

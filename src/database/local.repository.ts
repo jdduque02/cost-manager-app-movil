@@ -1228,6 +1228,7 @@ async function findPendingCreateOperation(
     operation: string;
     payload: string;
     retry_count: number;
+    last_error: string | null;
   }>(
     "SELECT * FROM pending_operations WHERE entity = ? AND local_id = ? AND operation = 'CREATE'",
     [entity, localId],
@@ -1240,6 +1241,7 @@ async function findPendingCreateOperation(
     operation: row.operation as "CREATE" | "UPDATE" | "DELETE",
     payload: JSON.parse(row.payload),
     retryCount: row.retry_count,
+    lastError: row.last_error ?? null,
   };
 }
 
@@ -1327,6 +1329,8 @@ export interface PendingOperation {
   operation: "CREATE" | "UPDATE" | "DELETE";
   payload: Record<string, unknown>;
   retryCount: number;
+  /** Motivo del rechazo 4xx del servidor; `null` si no falló de forma permanente. */
+  lastError: string | null;
 }
 
 export async function getPendingOperations(): Promise<PendingOperation[]> {
@@ -1338,6 +1342,7 @@ export async function getPendingOperations(): Promise<PendingOperation[]> {
     operation: string;
     payload: string;
     retry_count: number;
+    last_error: string | null;
   }>("SELECT * FROM pending_operations ORDER BY id ASC");
   return rows.map((r) => ({
     id: r.id,
@@ -1346,6 +1351,7 @@ export async function getPendingOperations(): Promise<PendingOperation[]> {
     operation: r.operation as "CREATE" | "UPDATE" | "DELETE",
     payload: JSON.parse(r.payload),
     retryCount: r.retry_count,
+    lastError: r.last_error ?? null,
   }));
 }
 
@@ -1359,6 +1365,32 @@ export async function incrementRetryCount(id: number): Promise<void> {
   await db.runAsync(
     "UPDATE pending_operations SET retry_count = retry_count + 1 WHERE id = ?",
     [id],
+  );
+}
+
+/**
+ * El servidor rechazó la operación (4xx): se deja de reintentar sola
+ * (`retry_count = maxRetries`) y se guarda el motivo. No se borra: el
+ * usuario decide reintentarla (ver `resetStuckOperations`).
+ */
+export async function markOperationFailed(
+  id: number,
+  reason: string,
+  maxRetries: number,
+): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    "UPDATE pending_operations SET retry_count = ?, last_error = ? WHERE id = ?",
+    [maxRetries, reason, id],
+  );
+}
+
+/** "Reintentar": devuelve a la cola activa las operaciones que agotaron reintentos. */
+export async function resetStuckOperations(maxRetries: number): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    "UPDATE pending_operations SET retry_count = 0, last_error = NULL WHERE retry_count >= ?",
+    [maxRetries],
   );
 }
 

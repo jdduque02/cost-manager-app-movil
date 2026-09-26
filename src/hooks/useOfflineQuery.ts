@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { useOfflineStore } from "@/store/offline.store";
 import { useAuthStore } from "@/store/auth.store";
-import { isSessionExpiredError } from "@/api/client";
+import { classifyApiError, isSessionExpiredError } from "@/api/client";
 
 /**
  * Hook que intenta la petición online primero y, si falla o no hay conexión,
@@ -64,5 +64,8 @@ export function useOfflineQuery<TData>(
     ...query,
     isUsingFallback,
     fallbackError: isUsingFallback ? fallbackError : null,
+    // Hay red pero Cloud Armor la rechaza: la pantalla debe decir "Red no
+    // autorizada", no "sin conexión" (cambiar de red lo arregla, esperar no).
+    isNetworkBlocked: isUsingFallback && classifyApiError(fallbackError) === "blocked",
   };
 }

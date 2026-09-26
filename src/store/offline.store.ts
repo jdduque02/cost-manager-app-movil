@@ -4,7 +4,7 @@ import {
   MAX_RETRIES,
   type SyncResult,
 } from "@/database/sync.service";
-import { getPendingOperations } from "@/database/local.repository";
+import { getPendingOperations, resetStuckOperations } from "@/database/local.repository";
 import { queryClient } from "@/lib/queryClient";
 
 // Sincroniza automáticamente cada ~2-3 min además del disparo al reconectar,
@@ -18,11 +18,15 @@ interface OfflineState {
   pendingCount: number;
   /** Operaciones que agotaron sus reintentos (MAX_RETRIES) y ya no se reintentan automáticamente. */
   skippedCount: number;
+  /** Motivo del primer rechazo 4xx entre las atascadas (para mostrarlo en el banner). */
+  stuckReason: string | null;
   lastSyncAt: string | null;
   lastSyncResult: SyncResult | null;
 
   setOnlineStatus: (online: boolean) => Promise<void>;
   sync: () => Promise<SyncResult | null>;
+  /** Reinicia el contador de las atascadas y sincroniza. No borra nada. */
+  retryStuck: () => Promise<SyncResult | null>;
   refreshPendingCount: () => Promise<void>;
 }
 
@@ -40,6 +44,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
   isSyncing: false,
   pendingCount: 0,
   skippedCount: 0,
+  stuckReason: null,
   lastSyncAt: null,
   lastSyncResult: null,
 
@@ -78,11 +83,25 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     }
   },
 
+  retryStuck: async () => {
+    if (get().isSyncing) return null;
+    try {
+      await resetStuckOperations(MAX_RETRIES);
+    } catch {
+      return null;
+    }
+    return get().sync();
+  },
+
   refreshPendingCount: async () => {
     try {
       const ops = await getPendingOperations();
-      const skipped = ops.filter((op) => op.retryCount >= MAX_RETRIES).length;
-      set({ pendingCount: ops.length, skippedCount: skipped });
+      const stuck = ops.filter((op) => op.retryCount >= MAX_RETRIES);
+      set({
+        pendingCount: ops.length,
+        skippedCount: stuck.length,
+        stuckReason: stuck.find((op) => op.lastError)?.lastError ?? null,
+      });
     } catch {
       // ignorar
     }

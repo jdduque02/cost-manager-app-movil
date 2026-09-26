@@ -287,7 +287,7 @@ export default function TransactionsScreen() {
     transaction_date: new Date().toISOString().split("T")[0],
   });
 
-  const { data, isLoading, refetch, isUsingFallback } = useOfflineQuery(
+  const { data, isLoading, refetch, isUsingFallback, isNetworkBlocked } = useOfflineQuery(
     {
       // Sufijo "list" — ver comentario equivalente en app/(tabs)/index.tsx.
       queryKey: ["transactions", userId, "list"],
@@ -432,6 +432,9 @@ export default function TransactionsScreen() {
     onSuccess: () => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       queryClient.invalidateQueries({ queryKey: ["transactions", userId] });
+    },
+    onError: (err: unknown) => {
+      Alert.alert("Error", err instanceof Error ? err.message : "Error al eliminar la transacción");
     },
   });
 
@@ -650,7 +653,7 @@ export default function TransactionsScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      {isUsingFallback && <StaleDataBanner onRetry={refetch} />}
+      {isUsingFallback && <StaleDataBanner onRetry={refetch} blocked={isNetworkBlocked} />}
 
       <View className="px-4 pt-4 pb-2">
         <PageHeader

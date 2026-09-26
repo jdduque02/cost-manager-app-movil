@@ -137,6 +137,7 @@ export default function ObjectivesScreen() {
     isLoading,
     refetch,
     isUsingFallback,
+    isNetworkBlocked,
   } = useOfflineQuery(
     {
       queryKey: ["objectives", userId],
@@ -265,7 +266,7 @@ export default function ObjectivesScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      {isUsingFallback && <StaleDataBanner onRetry={refetch} />}
+      {isUsingFallback && <StaleDataBanner onRetry={refetch} blocked={isNetworkBlocked} />}
       <FlatList
         data={objectives ?? []}
         keyExtractor={(item) => String(item.id)}
