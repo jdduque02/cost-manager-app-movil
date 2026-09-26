@@ -36,27 +36,24 @@ beforeEach(() => {
 // ─── login ────────────────────────────────────────────────────────────────────
 
 describe("login", () => {
-  it("hace POST a /auth/encrypt, luego a /auth/login, y guarda tokens", async () => {
+  it("hace un solo POST a /auth/login con la contraseña tal cual (sin /auth/encrypt) y guarda tokens", async () => {
     // apiClient.post ya viene desenvuelto del envelope (lo hace el interceptor real,
     // que este mock del módulo "../client" reemplaza por completo).
-    mockPost
-      .mockResolvedValueOnce({ data: [{ encrypted_password: "encrypted-pass" }] })
-      .mockResolvedValueOnce({ data: [mockTokenResponse] });
+    mockPost.mockResolvedValueOnce({ data: [mockTokenResponse] });
 
     const result = await login({ username: "user", password: "Pass1234" });
 
-    expect(mockPost).toHaveBeenNthCalledWith(1, "/auth/encrypt", {
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockPost).toHaveBeenCalledWith("/auth/login", {
+      username: "user",
       password: "Pass1234",
     });
-    expect(mockPost).toHaveBeenNthCalledWith(2, "/auth/login", {
-      username: "user",
-      password: "encrypted-pass",
-    });
+    expect(mockPost).not.toHaveBeenCalledWith("/auth/encrypt", expect.anything());
     expect(mockSaveTokens).toHaveBeenCalledWith("mock-access", "mock-refresh", 3600);
     expect(result.access_token).toBe("mock-access");
   });
 
-  it("propaga el error si falla la encriptación", async () => {
+  it("propaga el error si falla el login", async () => {
     mockPost.mockRejectedValueOnce(new Error("Network error"));
     await expect(
       login({ username: "user", password: "wrong" }),

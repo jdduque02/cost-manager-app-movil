@@ -12,18 +12,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ArrowLeft, Monitor } from "@/components/ui/icons";
 import { toast } from "@/utils/toast";
+import { formatDateTime } from "@/utils/format";
 import { router } from "expo-router";
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString("es-CO", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 export default function SessionsScreen() {
   const queryClient = useQueryClient();
@@ -59,17 +49,21 @@ export default function SessionsScreen() {
   });
 
   function handleRevoke(session: SessionResponse) {
-    Alert.alert("Revocar sesión", `¿Cerrar la sesión de ${session.browser} (${session.ip})?`, [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Revocar",
-        style: "destructive",
-        onPress: () => {
-          setRevokingId(session.sessionId);
-          revokeMutation.mutate(session.sessionId);
+    Alert.alert(
+      "Revocar sesión",
+      `¿Cerrar la sesión de ${session.browser || "este dispositivo"} (${session.ipAddress})?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Revocar",
+          style: "destructive",
+          onPress: () => {
+            setRevokingId(session.id);
+            revokeMutation.mutate(session.id);
+          },
         },
-      },
-    ]);
+      ],
+    );
   }
 
   if (isLoading) {
@@ -98,7 +92,7 @@ export default function SessionsScreen() {
 
       <FlatList
         data={data ?? []}
-        keyExtractor={(item) => item.sessionId}
+        keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: 16 }}
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} />}
         ListEmptyComponent={
@@ -107,21 +101,23 @@ export default function SessionsScreen() {
         renderItem={({ item }) => (
           <Card className="mb-3">
             <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-base font-sans-semibold text-foreground">{item.browser}</Text>
+              <Text className="text-base font-sans-semibold text-foreground">
+                {item.browser || "Dispositivo"}
+              </Text>
               <Badge tone="primary">Activa</Badge>
             </View>
-            <Text className="text-sm font-sans text-muted-foreground mb-1">IP: {item.ip}</Text>
+            <Text className="text-sm font-sans text-muted-foreground mb-1">IP: {item.ipAddress}</Text>
             <Text className="text-sm font-sans text-muted-foreground mb-1">
-              Inicio: {formatDate(item.start)}
+              Inicio: {formatDateTime(item.start)}
             </Text>
             <Text className="text-sm font-sans text-muted-foreground mb-3">
-              Último acceso: {formatDate(item.lastAccess)}
+              Último acceso: {formatDateTime(item.lastAccess)}
             </Text>
             <Button
               variant="destructive"
               size="sm"
               onPress={() => handleRevoke(item)}
-              loading={revokeMutation.isPending && revokingId === item.sessionId}
+              loading={revokeMutation.isPending && revokingId === item.id}
             >
               Revocar sesión
             </Button>

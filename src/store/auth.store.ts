@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import { isAxiosError } from "axios";
-import { getStoredTokens, clearTokens } from "@/api/client";
+import {
+  getStoredTokens,
+  clearTokens,
+  classifyApiError,
+  apiErrorMessage,
+  BLOCKED_NETWORK_MESSAGE,
+} from "@/api/client";
 import * as authApi from "@/api/auth.api";
 import * as usersApi from "@/api/users.api";
 import * as SecureStore from "expo-secure-store";
@@ -225,18 +231,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Con response (401, etc.) = el servidor respondió pero rechazó las credenciales.
       const isNetworkError = isAxiosError(err) && !err.response;
       let message: string;
-      if (isNetworkError) {
+      if (classifyApiError(err) === "blocked") {
+        // 403 de Cloud Armor (HTML, no JSON del API): la IP no está en la
+        // allowlist. No es un problema de credenciales.
+        message = BLOCKED_NETWORK_MESSAGE;
+      } else if (isNetworkError) {
         message =
           "No se pudo conectar con el servidor. Verifica tu conexión e IP del backend.";
         if (__DEV__ && isAxiosError(err)) {
           message += ` [${err.code ?? "sin código"}: ${err.message}]`;
         }
       } else if (isAxiosError(err) && err.response) {
-        const serverMessage = (err.response.data as { message?: string } | undefined)
-          ?.message;
-        message =
-          serverMessage ??
-          "Credenciales incorrectas. Verifica tu usuario y contraseña.";
+        message = apiErrorMessage(
+          err,
+          "Credenciales incorrectas. Verifica tu usuario y contraseña.",
+        );
       } else if (err instanceof Error) {
         message = err.message;
       } else {

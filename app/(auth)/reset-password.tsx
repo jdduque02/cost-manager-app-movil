@@ -2,6 +2,7 @@ import { View, Text, Pressable, KeyboardAvoidingView, Platform, ScrollView } fro
 import { useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import * as authApi from "@/api/auth.api";
+import { apiErrorMessage } from "@/api/client";
 import { SprigLogo } from "@/components/ui/SprigLogo";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -9,7 +10,11 @@ import { Button } from "@/components/ui/Button";
 import { toast } from "@/utils/toast";
 
 export default function ResetPasswordScreen() {
-  const { token, email } = useLocalSearchParams<{ token?: string; email?: string }>();
+  // Llegan por navegación desde verify-code (verifyOtp), no de un enlace de correo.
+  const { reset_token: resetToken, email } = useLocalSearchParams<{
+    reset_token?: string;
+    email?: string;
+  }>();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -30,18 +35,19 @@ export default function ResetPasswordScreen() {
       return;
     }
 
-    if (!token || !email) {
-      toast.error("Token de recuperacion no valido");
+    if (!resetToken || !email) {
+      toast.error("Verificación vencida", "Vuelve a pedir el código de recuperación");
+      router.replace("/(auth)/forgot-password");
       return;
     }
 
     try {
       setIsLoading(true);
-      await authApi.resetPassword(email, token, password);
+      await authApi.resetPassword(email, resetToken, password);
       toast.success("Tu contrasena ha sido actualizada");
       router.replace("/(auth)/login");
-    } catch {
-      toast.error("No se pudo restablecer la contrasena");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "No se pudo restablecer la contrasena"));
     } finally {
       setIsLoading(false);
     }

@@ -7,7 +7,8 @@
 
 import { useAuthStore } from "../auth.store";
 import * as authApi from "@/api/auth.api";
-import { getStoredTokens, clearTokens } from "@/api/client";
+import { getStoredTokens, clearTokens, BLOCKED_NETWORK_MESSAGE } from "@/api/client";
+import { AxiosError, AxiosHeaders } from "axios";
 import {
   cacheUser,
   getCachedUser,
@@ -20,10 +21,16 @@ import * as SecureStore from "expo-secure-store";
 
 jest.mock("@/api/auth.api");
 jest.mock("@/api/users.api");
-jest.mock("@/api/client", () => ({
-  getStoredTokens: jest.fn(),
-  clearTokens: jest.fn(),
-}));
+jest.mock("@/api/client", () => {
+  const actual = jest.requireActual("@/api/client");
+  return {
+    getStoredTokens: jest.fn(),
+    clearTokens: jest.fn(),
+    classifyApiError: actual.classifyApiError,
+    apiErrorMessage: actual.apiErrorMessage,
+    BLOCKED_NETWORK_MESSAGE: actual.BLOCKED_NETWORK_MESSAGE,
+  };
+});
 jest.mock("@/database/local.repository", () => ({
   cacheUser: jest.fn(),
   getCachedUser: jest.fn(),
@@ -230,6 +237,62 @@ describe("login", () => {
 
     expect(useAuthStore.getState().error).toBe("Credenciales inválidas");
     expect(useAuthStore.getState().isLoading).toBe(false);
+  });
+
+  it("un 403 de Cloud Armor (cuerpo HTML) muestra 'Red no autorizada', no credenciales incorrectas", async () => {
+    mockLogin.mockRejectedValueOnce(
+      new AxiosError("Request failed with status code 403", "ERR_BAD_REQUEST", undefined, null, {
+        status: 403,
+        statusText: "Forbidden",
+        data: "<!doctype html><title>403</title>",
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      }),
+    );
+
+    await expect(
+      useAuthStore.getState().login({ username: "user", password: "x" }),
+    ).rejects.toBeTruthy();
+
+    expect(useAuthStore.getState().error).toBe(BLOCKED_NETWORK_MESSAGE);
+  });
+
+  it("un 401 JSON del API sigue mostrando el mensaje del servidor", async () => {
+    mockLogin.mockRejectedValueOnce(
+      new AxiosError("Request failed with status code 401", "ERR_BAD_REQUEST", undefined, null, {
+        status: 401,
+        statusText: "Unauthorized",
+        data: { status: 401, message: "Usuario o contraseña inválidos", timestamp: "t" },
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      }),
+    );
+
+    await expect(
+      useAuthStore.getState().login({ username: "user", password: "x" }),
+    ).rejects.toBeTruthy();
+
+    expect(useAuthStore.getState().error).toBe("Usuario o contraseña inválidos");
+  });
+
+  it("si el API manda la clave i18n sin traducir (visto en prod), muestra el texto por defecto", async () => {
+    mockLogin.mockRejectedValueOnce(
+      new AxiosError("Request failed with status code 401", "ERR_BAD_REQUEST", undefined, null, {
+        status: 401,
+        statusText: "Unauthorized",
+        data: { status: 401, message: "auth.CREDENTIALS_INVALID", timestamp: "t" },
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      }),
+    );
+
+    await expect(
+      useAuthStore.getState().login({ username: "user", password: "x" }),
+    ).rejects.toBeTruthy();
+
+    expect(useAuthStore.getState().error).toBe(
+      "Credenciales incorrectas. Verifica tu usuario y contraseña.",
+    );
   });
 });
 

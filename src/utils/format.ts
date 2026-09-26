@@ -8,6 +8,25 @@ export function formatCurrency(amount: number): string {
 }
 
 /**
+ * Fecha+hora es-CO de un instante que llega como epoch en ms serializado
+ * ("1727000000000", así manda Keycloak sesiones/eventos) o como ISO.
+ * `null`/inválido → "—".
+ */
+export function formatDateTime(value: string | null | undefined): string {
+  if (!value) return "—";
+  const asNumber = Number(value);
+  const d = new Date(Number.isFinite(asNumber) ? asNumber : value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("es-CO", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
  * Formato compacto del eje Y de las gráficas de área — replica al pie la
  * `kFormatter` de `Sprig-web/src/components/views/Dashboard.tsx:39-42` para
  * paridad visual: símbolo `$` pegado, `k` para miles, sin separadores.

@@ -1,4 +1,4 @@
-import { apiClient, saveTokens, clearTokens } from "./client";
+import { apiClient, saveTokens, clearTokens, unwrapList } from "./client";
 import type {
   LoginDto,
   RefreshTokenDto,
@@ -7,28 +7,15 @@ import type {
 } from "@/types/auth.types";
 
 /**
- * Encripta una contraseña en texto plano usando la clave del servidor.
- * El resultado se envía en POST /auth/login.
- */
-export async function encryptPassword(password: string): Promise<string> {
-  const { data } = await apiClient.post<{ encrypted_password: string }[]>(
-    "/auth/encrypt",
-    { password },
-  );
-  return data[0].encrypted_password;
-}
-
-/**
  * Autentica al usuario contra el servidor Keycloak vía la API.
- * Primero encripta la contraseña con /auth/encrypt, luego llama a /auth/login.
+ * La contraseña viaja tal cual: la protege TLS (client.ts bloquea HTTP en
+ * release). El API ya no expone /auth/encrypt.
  * Persiste los tokens en SecureStore al tener éxito.
  */
 export async function login(dto: LoginDto): Promise<KeycloakTokenResponse> {
-  const encryptedPassword = await encryptPassword(dto.password);
-
   const { data } = await apiClient.post<KeycloakTokenResponse[]>(
     "/auth/login",
-    { username: dto.username, password: encryptedPassword },
+    { username: dto.username, password: dto.password },
   );
 
   const token = data[0];
@@ -130,7 +117,7 @@ export async function changePassword(
  */
 export async function getSessions(): Promise<SessionResponse[]> {
   const { data } = await apiClient.get<SessionResponse[]>("/auth/sessions");
-  return data;
+  return unwrapList(data);
 }
 
 /**
@@ -148,22 +135,23 @@ export async function getAccessHistory(): Promise<AccessHistoryEntry[]> {
   const { data } = await apiClient.get<AccessHistoryEntry[]>(
     "/auth/access-history",
   );
-  return data;
+  return unwrapList(data);
 }
 
+/** `start`/`lastAccess` son epoch en ms serializados como string (Keycloak). */
 export interface SessionResponse {
-  sessionId: string;
+  id: string;
+  ipAddress: string;
   browser: string;
-  ip: string;
   start: string;
-  lastAccess: string;
+  lastAccess: string | null;
 }
 
+/** Evento de Keycloak: sin id propio; `time` es epoch en ms como string. */
 export interface AccessHistoryEntry {
-  id: string;
   type: string;
-  ip: string;
+  ipAddress: string;
   time: string;
   error: string | null;
-  details: string | null;
+  details: Record<string, unknown>;
 }
