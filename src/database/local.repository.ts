@@ -1,6 +1,11 @@
 import type * as SQLite from "expo-sqlite";
 import { getDatabase } from "./database.service";
-import { remapReferences } from "./local-refs";
+import {
+  CORRUPT_PAYLOAD_REASON,
+  MAX_RETRIES,
+  parsePayload,
+  remapReferences,
+} from "./local-refs";
 import {
   cacheUserProfileSecurely,
   getSecurelyCachedUserProfile,
@@ -1221,28 +1226,11 @@ async function findPendingCreateOperation(
   localId: string,
 ): Promise<PendingOperation | null> {
   const db = await getDatabase();
-  const row = await db.getFirstAsync<{
-    id: number;
-    local_id: string;
-    entity: string;
-    operation: string;
-    payload: string;
-    retry_count: number;
-    last_error: string | null;
-  }>(
+  const row = await db.getFirstAsync<PendingOperationRow>(
     "SELECT * FROM pending_operations WHERE entity = ? AND local_id = ? AND operation = 'CREATE'",
     [entity, localId],
   );
-  if (!row) return null;
-  return {
-    id: row.id,
-    localId: row.local_id,
-    entity: row.entity,
-    operation: row.operation as "CREATE" | "UPDATE" | "DELETE",
-    payload: JSON.parse(row.payload),
-    retryCount: row.retry_count,
-    lastError: row.last_error ?? null,
-  };
+  return row ? toPendingOperation(row) : null;
 }
 
 async function updatePendingOperationPayload(
@@ -1270,6 +1258,9 @@ async function collapseOrEnqueueUpdate(
 ): Promise<void> {
   const pendingCreate = await findPendingCreateOperation(entity, localId);
   if (pendingCreate) {
+    // Payload dañado: mezclar los cambios sobre `{}` lo "repararía" con un
+    // CREATE incompleto. Se deja atascado para que el usuario lo descarte.
+    if (pendingCreate.lastError === CORRUPT_PAYLOAD_REASON) return;
     // El CREATE aún no tiene un id de servidor — no se agrega `id` al payload,
     // sólo se mezclan los campos modificados sobre el DTO de creación original.
     await updatePendingOperationPayload(pendingCreate.id, {
@@ -1333,26 +1324,40 @@ export interface PendingOperation {
   lastError: string | null;
 }
 
-export async function getPendingOperations(): Promise<PendingOperation[]> {
-  const db = await getDatabase();
-  const rows = await db.getAllAsync<{
-    id: number;
-    local_id: string;
-    entity: string;
-    operation: string;
-    payload: string;
-    retry_count: number;
-    last_error: string | null;
-  }>("SELECT * FROM pending_operations ORDER BY id ASC");
-  return rows.map((r) => ({
+interface PendingOperationRow {
+  id: number;
+  local_id: string;
+  entity: string;
+  operation: string;
+  payload: string;
+  retry_count: number;
+  last_error: string | null;
+}
+
+/**
+ * Un payload que no es JSON válido no tumba la lectura de toda la cola: la
+ * operación sale atascada (el sync la salta) con un motivo, lista para
+ * "Descartar". "Reintentar" no la revive: se vuelve a leer como atascada.
+ */
+function toPendingOperation(r: PendingOperationRow): PendingOperation {
+  const payload = parsePayload(r.payload);
+  return {
     id: r.id,
     localId: r.local_id,
     entity: r.entity,
     operation: r.operation as "CREATE" | "UPDATE" | "DELETE",
-    payload: JSON.parse(r.payload),
-    retryCount: r.retry_count,
-    lastError: r.last_error ?? null,
-  }));
+    payload: payload ?? {},
+    retryCount: payload ? r.retry_count : Math.max(r.retry_count, MAX_RETRIES),
+    lastError: payload ? (r.last_error ?? null) : CORRUPT_PAYLOAD_REASON,
+  };
+}
+
+export async function getPendingOperations(): Promise<PendingOperation[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<PendingOperationRow>(
+    "SELECT * FROM pending_operations ORDER BY id ASC",
+  );
+  return rows.map(toPendingOperation);
 }
 
 export async function deletePendingOperation(id: number): Promise<void> {

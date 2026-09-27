@@ -101,7 +101,7 @@ describe("syncPendingOperations", () => {
     // 1ª lectura: cola con el id local. 2ª (tras marcar la cuenta): markEntitySynced
     // ya remapeó la cola en SQLite, así que la transacción trae el id del servidor.
     mockGetPending
-      .mockResolvedValueOnce([accountOp, txOp])
+      .mockResolvedValueOnce([{ ...accountOp }, { ...txOp }])
       .mockResolvedValueOnce([accountOp, { ...txOp, payload: { ...txOp.payload, account_id: 500 } }]);
     mockCreateBankAccount.mockResolvedValueOnce({ id: 500 });
     mockCreateTransaction.mockResolvedValueOnce({ id: 10 });
@@ -216,7 +216,7 @@ describe("syncPendingOperations", () => {
       });
 
     it("un 4xx marca la operación como fallida con su motivo, sin borrarla ni sumar reintento", async () => {
-      mockGetPending.mockResolvedValueOnce([op]);
+      mockGetPending.mockResolvedValueOnce([{ ...op }]);
       mockCreateBankAccount.mockRejectedValueOnce(
         httpError(422, { status: 422, message: "Cuenta duplicada", timestamp: "t" }),
       );
@@ -230,7 +230,7 @@ describe("syncPendingOperations", () => {
     });
 
     it("sin message del API usa un motivo con el código HTTP", async () => {
-      mockGetPending.mockResolvedValueOnce([op]);
+      mockGetPending.mockResolvedValueOnce([{ ...op }]);
       mockCreateBankAccount.mockRejectedValueOnce(httpError(404, { status: 404, timestamp: "t" }));
 
       await syncPendingOperations();
@@ -243,13 +243,122 @@ describe("syncPendingOperations", () => {
       ["5xx", httpError(503, "unavailable")],
       ["Cloud Armor", httpError(403, "<html>403</html>")],
     ])("%s cuenta un reintento y no marca fallo permanente", async (_label, err) => {
-      mockGetPending.mockResolvedValueOnce([op]);
+      mockGetPending.mockResolvedValueOnce([{ ...op }]);
       mockCreateBankAccount.mockRejectedValueOnce(err);
 
       await syncPendingOperations();
 
       expect(mockIncRetry).toHaveBeenCalledWith(7);
       expect(mockMarkFailed).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("referencias a ids locales (padre creado offline)", () => {
+    const accountOp = {
+      id: 1,
+      entity: "bank_accounts",
+      operation: "CREATE",
+      localId: "-5",
+      retryCount: 0,
+      lastError: null,
+      payload: { userId: 1, localId: "-5", bank_name: "B" },
+    };
+    const txOp = {
+      id: 2,
+      entity: "transactions",
+      operation: "CREATE",
+      localId: "-9",
+      retryCount: 0,
+      lastError: null,
+      payload: { userId: 1, type: "expense", amount: 5, account_id: -5 },
+    };
+
+    it("si el CREATE del padre falla transitoriamente, la hija no se envía ni suma reintento", async () => {
+      mockGetPending.mockResolvedValueOnce([{ ...accountOp }, { ...txOp }]);
+      mockCreateBankAccount.mockRejectedValueOnce(new AxiosError("Network Error", "ERR_NETWORK"));
+
+      const result = await syncPendingOperations();
+
+      expect(mockCreateTransaction).not.toHaveBeenCalled();
+      expect(mockIncRetry).toHaveBeenCalledTimes(1);
+      expect(mockIncRetry).toHaveBeenCalledWith(1);
+      expect(mockMarkFailed).not.toHaveBeenCalled();
+      expect(result).toEqual({ synced: 0, failed: 1, skipped: 0 });
+    });
+
+    it("si el servidor rechaza al padre (4xx), la hija queda atascada en la misma corrida", async () => {
+      mockGetPending.mockResolvedValueOnce([{ ...accountOp }, { ...txOp }]);
+      mockCreateBankAccount.mockRejectedValueOnce(
+        new AxiosError("status 422", "ERR_BAD_REQUEST", undefined, null, {
+          status: 422,
+          statusText: "",
+          data: { status: 422, message: "Cuenta duplicada", timestamp: "t" },
+          headers: {},
+          config: { headers: new AxiosHeaders() },
+        }),
+      );
+
+      await syncPendingOperations();
+
+      expect(mockMarkFailed).toHaveBeenCalledWith(1, "Cuenta duplicada", MAX_RETRIES);
+      expect(mockMarkFailed).toHaveBeenCalledWith(2, expect.stringMatching(/no se sincroniz/), MAX_RETRIES);
+      expect(mockCreateTransaction).not.toHaveBeenCalled();
+    });
+
+    it("un CREATE ya sincronizado en esta corrida no cuenta como padre activo de otra hija huérfana", async () => {
+      const orphan = { ...txOp, id: 3, payload: { ...txOp.payload, account_id: -77 } };
+      mockGetPending.mockResolvedValueOnce([{ ...accountOp }, orphan]);
+      mockGetPending.mockResolvedValueOnce([{ ...accountOp }, orphan]);
+      mockCreateBankAccount.mockResolvedValueOnce({ id: 500 });
+
+      await syncPendingOperations();
+
+      expect(mockMarkFailed).toHaveBeenCalledWith(3, expect.stringMatching(/no se sincroniz/), MAX_RETRIES);
+    });
+
+    it("si ya no hay un CREATE activo del padre, la hija queda atascada con motivo", async () => {
+      mockGetPending.mockResolvedValueOnce([{ ...txOp }]);
+
+      await syncPendingOperations();
+
+      expect(mockCreateTransaction).not.toHaveBeenCalled();
+      expect(mockMarkFailed).toHaveBeenCalledWith(2, expect.stringMatching(/no se sincroniz/), MAX_RETRIES);
+    });
+  });
+
+  describe("404: el registro ya no existe en el servidor", () => {
+    const notFound = () =>
+      new AxiosError("status 404", "ERR_BAD_REQUEST", undefined, null, {
+        status: 404,
+        statusText: "",
+        data: { status: 404, message: "Not found", timestamp: "t" },
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      });
+
+    it("un DELETE con 404 se da por sincronizado", async () => {
+      mockGetPending.mockResolvedValueOnce([
+        { id: 8, entity: "transactions", operation: "DELETE", localId: "40", retryCount: 0, lastError: null, payload: { userId: 1, id: 40 } },
+      ]);
+      (transactionsApi.deleteTransaction as jest.Mock).mockRejectedValueOnce(notFound());
+
+      const result = await syncPendingOperations();
+
+      expect(mockDelete).toHaveBeenCalledWith(8);
+      expect(mockMarkFailed).not.toHaveBeenCalled();
+      expect(result.synced).toBe(1);
+    });
+
+    it("un UPDATE con 404 queda atascado con un motivo claro para descartarlo", async () => {
+      mockGetPending.mockResolvedValueOnce([
+        { id: 9, entity: "transactions", operation: "UPDATE", localId: "40", retryCount: 0, lastError: null, payload: { userId: 1, id: 40, amount: 3 } },
+      ]);
+      (transactionsApi.updateTransaction as jest.Mock).mockRejectedValueOnce(notFound());
+
+      await syncPendingOperations();
+
+      expect(mockMarkFailed).toHaveBeenCalledWith(9, expect.stringMatching(/ya no existe/i), MAX_RETRIES);
+      expect(mockDelete).not.toHaveBeenCalled();
     });
   });
 

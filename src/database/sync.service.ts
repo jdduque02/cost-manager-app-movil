@@ -4,7 +4,7 @@ import * as objectivesApi from "@/api/objectives.api";
 import * as empresasApi from "@/api/empresas.api";
 import { isAxiosError } from "axios";
 import { apiErrorMessage, classifyApiError } from "@/api/client";
-import { REF_TARGETS } from "./local-refs";
+import { MAX_RETRIES, REF_TARGETS, localParentRefs } from "./local-refs";
 import {
   getPendingOperations,
   deletePendingOperation,
@@ -27,7 +27,7 @@ import type {
 } from "@/types/objective.types";
 import type { CreateEmpresaDto } from "@/types/empresa.types";
 
-export const MAX_RETRIES = 3;
+export { MAX_RETRIES };
 
 type SyncHandler = (op: PendingOperation) => Promise<{ id: number }>;
 
@@ -147,7 +147,8 @@ const ALLOWED_OPERATIONS = new Set(["CREATE", "UPDATE", "DELETE"]);
  * Resultado de una ejecución de sincronización.
  * - synced: operaciones enviadas al servidor exitosamente.
  * - failed: operaciones que fallaron (red/5xx: +1 retryCount; 4xx: quedan
- *   atascadas con `lastError`).
+ *   atascadas con `lastError`). Las que esperan a que su padre offline
+ *   sincronice no cuentan en ningún grupo.
  * - skipped: operaciones atascadas (límite de reintentos o rechazo 4xx).
  */
 export interface SyncResult {
@@ -165,6 +166,7 @@ export interface SyncResult {
 export async function syncPendingOperations(): Promise<SyncResult> {
   const pending = await getPendingOperations();
   const result: SyncResult = { synced: 0, failed: 0, skipped: 0 };
+  const syncedIds = new Set<number>();
 
   for (const op of pending) {
     // Validar que entidad y operación estén en la whitelist antes de procesar
@@ -187,6 +189,34 @@ export async function syncPendingOperations(): Promise<SyncResult> {
       continue;
     }
 
+    // Aún apunta a una cuenta/meta/empresa creada offline (id negativo): el
+    // servidor la rechazaría con 4xx y quedaría atascada. Espera, sin gastar
+    // reintentos, a que el CREATE del padre sincronice (eso remapea el id).
+    // Sin un CREATE del padre activo (atascado o descartado) nunca lo hará.
+    const parents = localParentRefs(op.payload);
+    if (parents.length > 0) {
+      // ponytail: coincide por tipo de entidad, no por el id exacto del padre
+      // (el CREATE no guarda su id de fila). Una huérfana puede esperar una
+      // corrida de más mientras otro CREATE de ese tipo siga activo.
+      const parentActive = pending.some(
+        (p) =>
+          p.operation === "CREATE" &&
+          parents.includes(p.entity) &&
+          p.retryCount < MAX_RETRIES &&
+          !syncedIds.has(p.id),
+      );
+      if (!parentActive) {
+        await markOperationFailed(
+          op.id,
+          "Depende de una cuenta, meta o empresa que no se sincronizó",
+          MAX_RETRIES,
+        );
+        op.retryCount = MAX_RETRIES;
+        result.failed++;
+      }
+      continue;
+    }
+
     try {
       const { id: serverId } = await handler(op);
       await markEntitySynced(op.entity, op.localId, serverId);
@@ -200,21 +230,34 @@ export async function syncPendingOperations(): Promise<SyncResult> {
         }
       }
       await deletePendingOperation(op.id);
+      syncedIds.add(op.id);
       result.synced++;
     } catch (err) {
       // 4xx: reintentar daría el mismo rechazo → queda atascada con su motivo
       // hasta que el usuario pulse "Reintentar". Red, 5xx, bloqueo de Cloud
       // Armor o sesión expirada son transitorios: cuentan un reintento más.
+      const status = isAxiosError(err) ? err.response?.status : undefined;
+      if (status === 404 && op.operation === "DELETE") {
+        // Ya lo borró otro dispositivo: el resultado es el que se quería.
+        await deletePendingOperation(op.id);
+        result.synced++;
+        continue;
+      }
       if (classifyApiError(err) === "client") {
-        const status = isAxiosError(err) ? err.response?.status : undefined;
         await markOperationFailed(
           op.id,
-          apiErrorMessage(err, `El servidor rechazó el cambio (HTTP ${status ?? "4xx"})`),
+          status === 404 && op.operation === "UPDATE"
+            ? "Ya no existe en el servidor (se borró desde otro dispositivo)"
+            : apiErrorMessage(err, `El servidor rechazó el cambio (HTTP ${status ?? "4xx"})`),
           MAX_RETRIES,
         );
+        op.retryCount = MAX_RETRIES;
       } else {
         await incrementRetryCount(op.id);
+        op.retryCount++;
       }
+      // `pending` es la copia en memoria que consultan las hijas de esta op:
+      // si el padre quedó atascado, sus hijas se atascan en esta misma corrida.
       result.failed++;
     }
   }

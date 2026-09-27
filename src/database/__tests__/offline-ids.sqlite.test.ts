@@ -27,6 +27,7 @@ import {
   updateLocalTransaction,
   wipeLocalUserData,
 } from "../local.repository";
+import { MAX_RETRIES } from "../local-refs";
 import type { TransactionRecordResponse } from "@/types/transaction.types";
 
 jest.mock("expo-sqlite", () => ({ openDatabaseAsync: jest.fn() }));
@@ -273,3 +274,44 @@ describe("datos sensibles en SQLite", () => {
     expect(db.raw.prepare("SELECT COUNT(*) AS n FROM categories").get()).toEqual({ n: 1 });
   });
 });
+
+describe("payload dañado en la cola", () => {
+  const corrupt = (localId: string) =>
+    db.raw
+      .prepare("INSERT INTO pending_operations (local_id, entity, operation, payload) VALUES (?, 'transactions', 'UPDATE', '{roto')")
+      .run(localId);
+
+  it("markEntitySynced no revierte el sync del padre (no reenvía el CREATE) y la op dañada queda atascada", async () => {
+    const acc = await createLocalBankAccount(USER, {
+      bank_name: "B",
+      account_type: "ahorros",
+      account_number: "1234567890",
+      balance: 0,
+    });
+    const tx = await createLocalTransaction(USER, { ...txDto, account_id: acc.id });
+    corrupt("x");
+
+    await expect(
+      markEntitySynced("bank_accounts", await localIdOf("bank_accounts", acc.id), 500),
+    ).resolves.toBeUndefined();
+
+    expect((await getLocalTransactions(USER)).find((r) => r.id === tx.id)?.account_id).toBe(500);
+    const ops = await getPendingOperations();
+    const broken = ops.find((op) => op.localId === "x")!;
+    expect(broken.retryCount).toBeGreaterThanOrEqual(MAX_RETRIES);
+    expect(broken.lastError).toMatch(/dañad/);
+  });
+
+  it("la migración de arranque no se rompe con un payload dañado", async () => {
+    await getDatabase();
+    db.raw.exec(`
+      INSERT INTO bank_accounts (id, local_id, user_id, bank_name, account_type, is_pending_sync)
+        VALUES (3, 'local_acc', ${USER}, 'B', 'ahorros', 1);
+    `);
+    corrupt("y");
+
+    await closeDatabase();
+    await expect(getDatabase()).resolves.toBeDefined();
+  });
+});
+
