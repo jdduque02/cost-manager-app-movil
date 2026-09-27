@@ -1,0 +1,156 @@
+import { create } from "zustand";
+import {
+  syncPendingOperations,
+  MAX_RETRIES,
+  type SyncResult,
+} from "@/database/sync.service";
+import {
+  getPendingOperations,
+  resetStuckOperations,
+  discardPendingOperations,
+} from "@/database/local.repository";
+import { queryClient } from "@/lib/queryClient";
+
+// Sincroniza automáticamente cada ~2-3 min además del disparo al reconectar,
+// para no depender únicamente del evento offline→online (p.ej. si la app
+// nunca perdió la conexión pero el primer intento de sync falló).
+const PERIODIC_SYNC_INTERVAL_MS = 2.5 * 60 * 1000;
+
+interface OfflineState {
+  isOnline: boolean;
+  isSyncing: boolean;
+  pendingCount: number;
+  /** Operaciones que agotaron sus reintentos (MAX_RETRIES) y ya no se reintentan automáticamente. */
+  skippedCount: number;
+  /** Ids de las atascadas: "Descartar" borra exactamente las que el usuario vio. */
+  stuckIds: number[];
+  /** Motivo del primer rechazo 4xx entre las atascadas (para mostrarlo en el banner). */
+  stuckReason: string | null;
+  lastSyncAt: string | null;
+  lastSyncResult: SyncResult | null;
+
+  setOnlineStatus: (online: boolean) => Promise<void>;
+  sync: () => Promise<SyncResult | null>;
+  /** Reinicia el contador de las atascadas y sincroniza. No borra nada. */
+  retryStuck: () => Promise<SyncResult | null>;
+  /** Borra de la cola esas operaciones atascadas y la fila local que editaban. */
+  discardStuck: (ids: number[]) => Promise<void>;
+  refreshPendingCount: () => Promise<void>;
+}
+
+/**
+ * Store global de estado offline (Zustand).
+ *
+ * Responsabilidades:
+ * - Rastrear si la app está online o offline.
+ * - Contar las operaciones pendientes de sincronización.
+ * - Disparar la sincronización automáticamente al recuperar conexión.
+ * - Exponer el resultado de la última sincronización.
+ */
+export const useOfflineStore = create<OfflineState>((set, get) => ({
+  isOnline: true,
+  isSyncing: false,
+  pendingCount: 0,
+  skippedCount: 0,
+  stuckIds: [],
+  stuckReason: null,
+  lastSyncAt: null,
+  lastSyncResult: null,
+
+  setOnlineStatus: async (online: boolean) => {
+    const wasOffline = !get().isOnline;
+    set({ isOnline: online });
+
+    // Si acaba de recuperar conexión, sincronizar automáticamente
+    if (online && wasOffline) {
+      await get().sync();
+    }
+
+    await get().refreshPendingCount();
+  },
+
+  sync: async () => {
+    if (get().isSyncing) return null;
+    set({ isSyncing: true });
+    try {
+      const result = await syncPendingOperations();
+      set({
+        lastSyncAt: new Date().toISOString(),
+        lastSyncResult: result,
+      });
+      await get().refreshPendingCount();
+      // El sync escribió datos nuevos en SQLite/remoto; invalidar las queries
+      // para que las pantallas hagan refetch. Es necesario porque
+      // `useOfflineQuery` fuerza `networkMode: "always"` (las queries nunca
+      // pasan a "paused"), así que `refetchOnReconnect` nunca se dispara.
+      queryClient.invalidateQueries();
+      return result;
+    } catch {
+      return null;
+    } finally {
+      set({ isSyncing: false });
+    }
+  },
+
+  retryStuck: async () => {
+    if (get().isSyncing) return null;
+    try {
+      await resetStuckOperations(MAX_RETRIES);
+    } catch {
+      return null;
+    }
+    return get().sync();
+  },
+
+  discardStuck: async (ids) => {
+    // Sin guard de `isSyncing`: el sync salta las atascadas (retryCount >=
+    // MAX_RETRIES en su lectura), así que borrarlas en paralelo es seguro.
+    try {
+      await discardPendingOperations(ids);
+    } catch {
+      // ignorar: los contadores de abajo reflejan lo que quedó
+    }
+    await get().refreshPendingCount();
+    // Se borraron filas locales: las pantallas deben releer.
+    queryClient.invalidateQueries();
+  },
+
+  refreshPendingCount: async () => {
+    try {
+      const ops = await getPendingOperations();
+      const stuck = ops.filter((op) => op.retryCount >= MAX_RETRIES);
+      set({
+        pendingCount: ops.length,
+        skippedCount: stuck.length,
+        stuckIds: stuck.map((op) => op.id),
+        stuckReason: stuck.find((op) => op.lastError)?.lastError ?? null,
+      });
+    } catch {
+      // ignorar
+    }
+  },
+}));
+
+// Timer periódico: complementa el disparo en el flanco offline→online para
+// cubrir el caso en que la app nunca perdió conexión pero un sync anterior
+// falló. No depende de AppState (evita una segunda suscripción — el refresh
+// proactivo de tokens en `api/client.ts` ya escucha foreground/background).
+let periodicSyncTimer: ReturnType<typeof setInterval> | null = null;
+
+export function startPeriodicSync(): void {
+  if (periodicSyncTimer != null) return;
+  periodicSyncTimer = setInterval(() => {
+    const { isOnline, isSyncing, pendingCount, skippedCount, sync } =
+      useOfflineStore.getState();
+    if (isOnline && !isSyncing && pendingCount > skippedCount) {
+      sync();
+    }
+  }, PERIODIC_SYNC_INTERVAL_MS);
+}
+
+export function stopPeriodicSync(): void {
+  if (periodicSyncTimer != null) {
+    clearInterval(periodicSyncTimer);
+    periodicSyncTimer = null;
+  }
+}
