@@ -15,7 +15,7 @@ const EAS_PROJECT_ID = process.env.EAS_PROJECT_ID;
 const config: ExpoConfig = {
   name: "Sprig",
   slug: "sprig",
-  version: "1.1.0",
+  version: "1.1.1",
   orientation: "portrait",
   icon: "./assets/sprig/sprig_app_icon.png",
   scheme: "sprig",
