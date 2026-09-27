@@ -65,6 +65,10 @@ export function setPatrimony<
   return { ...cleared, liability_id: id };
 }
 
+/** Ayuda de la pestaña "Pasivo": el API sube la deuda con gastos y la baja con ingresos/inversiones (R6.11). */
+export const LIABILITY_LINK_HINT =
+  "Un gasto ligado a un pasivo sube la deuda; un ingreso o una inversión la bajan. Para pagar la tarjeta usa «Transferir».";
+
 export const INSTALLMENTS_MIN = 1;
 export const INSTALLMENTS_MAX = 120;
 export const DUE_DAY_MIN = 1;
