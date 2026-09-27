@@ -1,4 +1,4 @@
-import { apiClient, unwrapList } from "./client";
+import { apiClient, isListPayload, unwrapList } from "./client";
 import * as localRepo from "@/database/local.repository";
 import type {
   BankAccountResponse,
@@ -16,11 +16,16 @@ function one<T>(data: T | T[]): T {
 export async function getBankAccounts(
   userId: number,
 ): Promise<BankAccountResponse[]> {
+  // Lista completa (sin paginar): snapshot previo para podar lo borrado en otro
+  // dispositivo (ver "Poda del caché" en local.repository.ts).
+  const before = await localRepo.getCachedIds("bank_accounts", userId).catch(() => undefined);
   const { data } = await apiClient.get<
     BankAccountResponse[] | { data: BankAccountResponse[]; total?: number }
   >(`/users/${userId}/bank-accounts`);
   const accounts = unwrapList(data);
-  await localRepo.saveBankAccounts(accounts).catch(() => {});
+  await localRepo
+    .saveBankAccounts(accounts, isListPayload(data) ? before : undefined)
+    .catch(() => {});
   return accounts;
 }
 
@@ -66,6 +71,7 @@ export async function deleteBankAccount(
 export async function getFinancialAssets(
   userId: number,
 ): Promise<FinancialAssetResponse[]> {
+  const before = await localRepo.getCachedIds("financial_assets", userId).catch(() => undefined);
   const { data } = await apiClient.get<
     FinancialAssetResponse[] | { data: FinancialAssetResponse[]; total?: number }
   >(`/users/${userId}/financial-assets`);
@@ -74,7 +80,9 @@ export async function getFinancialAssets(
     current_value: Number(a.current_value ?? 0),
     current_yield: a.current_yield != null ? Number(a.current_yield) : null,
   }));
-  await localRepo.saveFinancialAssets(assets).catch(() => {});
+  await localRepo
+    .saveFinancialAssets(assets, isListPayload(data) ? before : undefined)
+    .catch(() => {});
   return assets;
 }
 
@@ -82,6 +90,7 @@ export async function getFinancialAssets(
 export async function getFinancialLiabilities(
   userId: number,
 ): Promise<FinancialLiabilityResponse[]> {
+  const before = await localRepo.getCachedIds("financial_liabilities", userId).catch(() => undefined);
   const { data } = await apiClient.get<
     FinancialLiabilityResponse[] | { data: FinancialLiabilityResponse[]; total?: number }
   >(`/users/${userId}/financial-liabilities`);
@@ -89,6 +98,8 @@ export async function getFinancialLiabilities(
     ...l,
     current_balance: Number(l.current_balance ?? 0),
   }));
-  await localRepo.saveFinancialLiabilities(liabilities).catch(() => {});
+  await localRepo
+    .saveFinancialLiabilities(liabilities, isListPayload(data) ? before : undefined)
+    .catch(() => {});
   return liabilities;
 }
