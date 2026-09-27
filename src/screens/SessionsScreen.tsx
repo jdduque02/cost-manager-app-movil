@@ -1,0 +1,129 @@
+import { useState } from "react";
+import { View, Text, FlatList, Pressable, Alert, RefreshControl } from "react-native";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import * as authApi from "@/api/auth.api";
+import type { SessionResponse } from "@/api/auth.api";
+import { useAppTheme } from "@/components/ThemeProvider";
+import { PALETTE } from "@/theme/palette";
+import { Card } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { ArrowLeft, Monitor } from "@/components/ui/icons";
+import { toast } from "@/utils/toast";
+import { formatDateTime } from "@/utils/format";
+import { router } from "expo-router";
+
+export default function SessionsScreen() {
+  const queryClient = useQueryClient();
+  const { resolvedScheme } = useAppTheme();
+  // Trackea qué sesión se está revocando en este momento para que solo el
+  // botón de esa fila muestre el spinner — `revokeMutation.isPending` es
+  // global a la mutación, así que usarlo directo prendía el loading en TODAS
+  // las filas del `FlatList` a la vez (ver hallazgo H1.3 de la auditoría de
+  // sept/2026).
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["sessions"],
+    queryFn: () => authApi.getSessions(),
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (sessionId: string) => authApi.revokeSession(sessionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      toast.success("Sesión revocada", "La sesión ha sido cerrada correctamente.");
+    },
+    onError: () => {
+      toast.error("No se pudo revocar la sesión.");
+    },
+    // Solo limpia `revokingId` si sigue siendo el de ESTA llamada — si el
+    // usuario revoca la sesión A y luego, antes de que termine, la sesión B,
+    // que A resuelva primero no debe apagar el spinner de B (hallazgo de
+    // code-review sobre H1.3, sept/2026).
+    onSettled: (_data, _err, sessionId) => {
+      setRevokingId((current) => (current === sessionId ? null : current));
+    },
+  });
+
+  function handleRevoke(session: SessionResponse) {
+    Alert.alert(
+      "Revocar sesión",
+      `¿Cerrar la sesión de ${session.browser || "este dispositivo"} (${session.ipAddress})?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Revocar",
+          style: "destructive",
+          onPress: () => {
+            setRevokingId(session.id);
+            revokeMutation.mutate(session.id);
+          },
+        },
+      ],
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <View className="flex-1 bg-background px-4 pt-6">
+        <Skeleton width={200} height={28} className="mb-4" />
+        {[1, 2, 3].map((i) => (
+          <Card key={i} className="mb-3">
+            <Skeleton width="60%" height={16} className="mb-2" />
+            <Skeleton width="40%" height={14} className="mb-1" />
+            <Skeleton width="50%" height={14} />
+          </Card>
+        ))}
+      </View>
+    );
+  }
+
+  return (
+    <View className="flex-1 bg-background">
+      <View className="px-4 pt-4 pb-2 flex-row items-center gap-3">
+        <Pressable onPress={() => router.back()}>
+          <ArrowLeft size={20} color={PALETTE[resolvedScheme].foreground} />
+        </Pressable>
+        <Text className="text-xl font-display text-foreground">Sesiones</Text>
+      </View>
+
+      <FlatList
+        data={data ?? []}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ padding: 16 }}
+        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} />}
+        ListEmptyComponent={
+          <EmptyState icon={Monitor} title="Sin sesiones activas" description="No hay sesiones registradas." />
+        }
+        renderItem={({ item }) => (
+          <Card className="mb-3">
+            <View className="flex-row items-center justify-between mb-2">
+              <Text className="text-base font-sans-semibold text-foreground">
+                {item.browser || "Dispositivo"}
+              </Text>
+              <Badge tone="primary">Activa</Badge>
+            </View>
+            <Text className="text-sm font-sans text-muted-foreground mb-1">IP: {item.ipAddress}</Text>
+            <Text className="text-sm font-sans text-muted-foreground mb-1">
+              Inicio: {formatDateTime(item.start)}
+            </Text>
+            <Text className="text-sm font-sans text-muted-foreground mb-3">
+              Último acceso: {formatDateTime(item.lastAccess)}
+            </Text>
+            <Button
+              variant="destructive"
+              size="sm"
+              onPress={() => handleRevoke(item)}
+              loading={revokeMutation.isPending && revokingId === item.id}
+            >
+              Revocar sesión
+            </Button>
+          </Card>
+        )}
+      />
+    </View>
+  );
+}
