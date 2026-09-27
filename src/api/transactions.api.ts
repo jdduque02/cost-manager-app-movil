@@ -54,7 +54,8 @@ function toAmounts<T extends object>(v: T | undefined): T & TransactionSummaryAm
 /**
  * El API manda el resumen como `data: [summary]` y el interceptor deja el
  * arreglo: leer `.totals` directo sobre él daba todo en 0. Montos numeric de
- * Postgres llegan como string → Number.
+ * Postgres llegan como string → Number. Siempre por una sola moneda (COP por
+ * defecto): sin `currency` el API suma COP y USD en los mismos totales.
  */
 export async function getTransactionSummary(
   userId: number,
@@ -62,7 +63,7 @@ export async function getTransactionSummary(
 ): Promise<TransactionSummary> {
   const { data } = await apiClient.get<TransactionSummary | TransactionSummary[]>(
     `/users/${userId}/transactions/summary`,
-    { params: query },
+    { params: { ...query, currency: query.currency ?? "COP" } },
   );
   const s = (Array.isArray(data) ? data[0] : data) as Partial<TransactionSummary> | undefined;
   return {

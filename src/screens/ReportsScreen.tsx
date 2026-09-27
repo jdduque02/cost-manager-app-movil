@@ -6,6 +6,7 @@ import * as transactionsApi from "@/api/transactions.api";
 import { getLocalTransactions } from "@/database/local.repository";
 import { formatCurrency } from "@/utils/format";
 import { Card } from "@/components/ui/Card";
+import { Money } from "@/components/ui/Money";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -14,6 +15,7 @@ import { StatCard } from "@/components/ui/StatCard";
 import { ListRow } from "@/components/ui/ListRow";
 import { TrendAreaChart } from "@/components/charts/TrendAreaChart";
 import { Wallet, TrendingUp, TrendingDown, ChartColumn, ReceiptText } from "@/components/ui/icons";
+import type { SummaryCurrency } from "@/types/transaction.types";
 
 type DatePreset = "this_month" | "last_month" | "last_7_days" | "last_30_days" | "this_year" | "custom";
 type GroupBy = "day" | "week" | "month";
@@ -94,6 +96,7 @@ interface TransactionItem {
   description: string | null;
   amount: number;
   type: string;
+  currency?: string;
   transaction_date: string;
 }
 
@@ -107,13 +110,15 @@ function startOfWeek(date: Date): Date {
 /**
  * Version offline del resumen del servidor: agrega las transacciones de la
  * caché local dentro del rango seleccionado (por type y por el group_by
- * elegido). Antes el fallback devolvía totals en cero, lo que el usuario
- * leía como "no hay gastos" cuando en realidad era "no hay conexión".
+ * elegido), solo de `currency` — igual que el servidor, nunca suma monedas.
+ * Antes el fallback devolvía totals en cero, lo que el usuario leía como
+ * "no hay gastos" cuando en realidad era "no hay conexión".
  */
-async function buildLocalSummary(
+export async function buildLocalSummary(
   userId: number,
   dateRange: { date_from: string; date_to: string },
   groupBy: GroupBy,
+  currency: SummaryCurrency,
 ): Promise<TransactionSummary> {
   const txs = await getLocalTransactions(userId);
   const totals: TransactionSummaryTotals = {
@@ -127,6 +132,7 @@ async function buildLocalSummary(
   for (const t of txs) {
     const day = (t.transaction_date || t.created_at || "").slice(0, 10);
     if (!day || day < dateRange.date_from || day > dateRange.date_to) continue;
+    if ((t.currency || "COP") !== currency) continue;
 
     const amount = Number(t.amount ?? 0);
     if (t.type === "income") totals.income += amount;
@@ -181,20 +187,31 @@ export default function ReportsScreen() {
 
   const dateRange = useMemo(() => getDateRange(preset), [preset]);
 
-  const { data: summary, isLoading: summaryLoading } = useOfflineQuery<TransactionSummary>(
-    {
-      queryKey: ["reports-summary", userId, preset, groupBy, dateRange],
-      queryFn: async () => {
-        const s = await transactionsApi.getTransactionSummary(userId as number, {
-          date_from: dateRange.date_from,
-          date_to: dateRange.date_to,
-          group_by: groupBy,
-        });
-        return { group_by: groupBy, totals: s.totals, series: s.series };
-      },
-      enabled: !!userId,
+  // Un resumen por moneda: la moneda va en la queryKey para que la caché de
+  // COP y la de USD nunca se pisen ni se sumen.
+  const summaryQuery = (currency: SummaryCurrency) => ({
+    queryKey: ["reports-summary", userId, currency, preset, groupBy, dateRange],
+    queryFn: async (): Promise<TransactionSummary> => {
+      const s = await transactionsApi.getTransactionSummary(userId as number, {
+        date_from: dateRange.date_from,
+        date_to: dateRange.date_to,
+        group_by: groupBy,
+        currency,
+      });
+      return { group_by: groupBy, totals: s.totals, series: s.series };
     },
-    async () => (userId ? buildLocalSummary(userId, dateRange, groupBy) : EMPTY_SUMMARY),
+    enabled: !!userId,
+  });
+  const localSummary = (currency: SummaryCurrency) => async () =>
+    userId ? buildLocalSummary(userId, dateRange, groupBy, currency) : EMPTY_SUMMARY;
+
+  const { data: summary, isLoading: summaryLoading } = useOfflineQuery<TransactionSummary>(
+    summaryQuery("COP"),
+    localSummary("COP"),
+  );
+  const { data: usdSummary } = useOfflineQuery<TransactionSummary>(
+    summaryQuery("USD"),
+    localSummary("USD"),
   );
 
   const { data: transactions, isLoading: txLoading } = useOfflineQuery<{ data: TransactionItem[] }>(
@@ -221,6 +238,7 @@ export default function ReportsScreen() {
           description: t.description,
           amount: t.amount,
           type: t.type,
+          currency: t.currency,
           transaction_date: t.transaction_date,
         })),
       };
@@ -247,6 +265,7 @@ export default function ReportsScreen() {
   }
 
   const balance = (summary?.totals.income ?? 0) - (summary?.totals.expenses ?? 0);
+  const usd = usdSummary?.totals;
 
   return (
     <ScrollView className="flex-1 bg-background">
@@ -304,6 +323,29 @@ export default function ReportsScreen() {
           </View>
         </View>
 
+        {/* Movimientos en dólares: aparte, nunca sumados a los pesos */}
+        {usd && usd.count > 0 && (
+          <Card>
+            <Text className="text-xs font-sans-medium uppercase tracking-widest text-muted-foreground mb-3">
+              En dólares (USD)
+            </Text>
+            <View className="gap-3">
+              {(
+                [
+                  ["Ingresos", usd.income, "text-success"],
+                  ["Gastos", usd.expenses, "text-destructive"],
+                  ["Balance", usd.income - usd.expenses, "text-foreground"],
+                ] as const
+              ).map(([label, value, tone]) => (
+                <View key={label} className="flex-row justify-between">
+                  <Text className="text-sm font-sans text-foreground">{label}</Text>
+                  <Money value={value} currency="USD" className={`text-sm ${tone}`} />
+                </View>
+              ))}
+            </View>
+          </Card>
+        )}
+
         {/* Chart */}
         {chartPoints.length > 0 && (
           <Card>
@@ -338,7 +380,7 @@ export default function ReportsScreen() {
                         className={`text-sm font-num-semibold ${tx.type === "income" ? "text-success" : "text-destructive"}`}
                       >
                         {tx.type === "income" ? "+" : "-"}
-                        {formatCurrency(Number(tx.amount))}
+                        {formatCurrency(Number(tx.amount), tx.currency === "USD" ? "USD" : "COP")}
                       </Text>
                       <Badge tone={tx.type === "income" ? "success" : "destructive"}>
                         {tx.type === "income" ? "Ingreso" : "Gasto"}
