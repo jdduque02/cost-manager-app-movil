@@ -1,9 +1,12 @@
-/** Formatea un monto como pesos colombianos, sin decimales — usado en toda la app. */
-export function formatCurrency(amount: number): string {
+/**
+ * Formatea un monto en pesos colombianos sin decimales (usado en toda la app);
+ * con `"USD"`, en dólares con centavos. Nunca sumes montos de monedas distintas.
+ */
+export function formatCurrency(amount: number, currency: "COP" | "USD" = "COP"): string {
   return new Intl.NumberFormat("es-CO", {
     style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
+    currency,
+    maximumFractionDigits: currency === "COP" ? 0 : 2,
   }).format(amount);
 }
 

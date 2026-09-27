@@ -101,10 +101,14 @@ export interface TransactionQueryDto {
   limit?: number;
 }
 
+export type SummaryCurrency = "COP" | "USD";
+
 export interface TransactionSummaryQuery {
   date_from: string;
   date_to: string;
   group_by?: "day" | "week" | "month";
+  /** Sin ella el API mezcla monedas en los totales; `getTransactionSummary` pide COP por defecto. */
+  currency?: SummaryCurrency;
 }
 
 export interface TransactionSummaryAmounts {

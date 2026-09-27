@@ -31,7 +31,9 @@ describe("getTransactionSummary", () => {
 
     const s = await getTransactionSummary(9, query);
 
-    expect(mockGet).toHaveBeenCalledWith("/users/9/transactions/summary", { params: query });
+    expect(mockGet).toHaveBeenCalledWith("/users/9/transactions/summary", {
+      params: { ...query, currency: "COP" },
+    });
     expect(s.totals).toEqual({ income: 1500000, expenses: 320000.5, investments: 0, count: 7 });
     expect(s.series[0]).toMatchObject({ key: "2026-09", income: 1500000, count: 0 });
     expect(s.by_category[0]).toMatchObject({ category_id: 3, expenses: 120000, income: 0 });
@@ -45,5 +47,14 @@ describe("getTransactionSummary", () => {
     const empty = await getTransactionSummary(9, query);
     expect(empty.totals).toEqual({ income: 0, expenses: 0, investments: 0, count: 0 });
     expect(empty.series).toEqual([]);
+  });
+
+  it("sin moneda pide COP (el API mezcla monedas si no se indica) y respeta USD", async () => {
+    mockGet.mockResolvedValue({ data: [] });
+    await getTransactionSummary(9, { date_from: "2026-09-01", date_to: "2026-09-30" });
+    expect(mockGet.mock.calls[0][1].params.currency).toBe("COP");
+
+    await getTransactionSummary(9, { ...query, currency: "USD" });
+    expect(mockGet.mock.calls[1][1].params.currency).toBe("USD");
   });
 });
