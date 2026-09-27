@@ -1,4 +1,4 @@
-import { apiClient, unwrapList } from "./client";
+import { apiClient, isListPayload, unwrapList } from "./client";
 import * as localRepo from "@/database/local.repository";
 import type {
   EmpresaResponse,
@@ -11,11 +11,16 @@ function one<T>(data: T | T[]): T {
 }
 
 export async function getEmpresas(userId: number): Promise<EmpresaResponse[]> {
+  // Lista completa (sin paginar): snapshot previo para podar lo borrado en otro
+  // dispositivo (ver "Poda del caché" en local.repository.ts).
+  const before = await localRepo.getCachedIds("companies", userId).catch(() => undefined);
   const { data } = await apiClient.get<
     EmpresaResponse[] | { data: EmpresaResponse[]; total?: number }
   >(`/users/${userId}/empresas`);
   const empresas = unwrapList(data);
-  await localRepo.saveCompanies(empresas).catch(() => {});
+  await localRepo
+    .saveCompanies(empresas, isListPayload(data) ? before : undefined)
+    .catch(() => {});
   return empresas;
 }
 
