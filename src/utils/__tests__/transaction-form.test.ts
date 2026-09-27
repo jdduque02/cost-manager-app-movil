@@ -5,9 +5,16 @@ import {
   clearPatrimonyFields,
   setPatrimony,
   validateFixedAndInstallments,
+  LIABILITY_LINK_HINT,
 } from "../transaction-form";
 
 describe("transaction-form utils", () => {
+  it("la ayuda de pasivo dice que el gasto sube la deuda y que se paga con Transferir (R6.11)", () => {
+    expect(LIABILITY_LINK_HINT).toContain("sube la deuda");
+    expect(LIABILITY_LINK_HINT).toContain("Transferir");
+    expect(LIABILITY_LINK_HINT).not.toMatch(/abono/i);
+  });
+
   it("expone los 6 métodos de pago en el mismo orden que la web", () => {
     expect(PAYMENT_METHOD_OPTIONS.map((o) => o.value)).toEqual([
       "bank_transfer",
