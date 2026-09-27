@@ -84,6 +84,7 @@ import {
   clearPatrimonyFields,
   setPatrimony,
   validateFixedAndInstallments,
+  LIABILITY_LINK_HINT,
 } from "@/utils/transaction-form";
 
 const PATRIMONY_OPTIONS: SegmentedOption<PatrimonyKind>[] = [
@@ -1126,6 +1127,11 @@ export default function TransactionsScreen() {
                   onChange={setPatrimonyTab}
                 />
               </View>
+              {patrimonyTab === "liability" && (
+                <Text className="text-xs font-sans text-muted-foreground mb-2">
+                  {LIABILITY_LINK_HINT}
+                </Text>
+              )}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
                 {patrimonyTab === "account" &&
                   ((bankAccounts ?? []).length === 0 ? (
