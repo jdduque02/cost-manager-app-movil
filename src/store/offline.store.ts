@@ -4,7 +4,11 @@ import {
   MAX_RETRIES,
   type SyncResult,
 } from "@/database/sync.service";
-import { getPendingOperations, resetStuckOperations } from "@/database/local.repository";
+import {
+  getPendingOperations,
+  resetStuckOperations,
+  discardPendingOperations,
+} from "@/database/local.repository";
 import { queryClient } from "@/lib/queryClient";
 
 // Sincroniza automáticamente cada ~2-3 min además del disparo al reconectar,
@@ -18,6 +22,8 @@ interface OfflineState {
   pendingCount: number;
   /** Operaciones que agotaron sus reintentos (MAX_RETRIES) y ya no se reintentan automáticamente. */
   skippedCount: number;
+  /** Ids de las atascadas: "Descartar" borra exactamente las que el usuario vio. */
+  stuckIds: number[];
   /** Motivo del primer rechazo 4xx entre las atascadas (para mostrarlo en el banner). */
   stuckReason: string | null;
   lastSyncAt: string | null;
@@ -27,6 +33,8 @@ interface OfflineState {
   sync: () => Promise<SyncResult | null>;
   /** Reinicia el contador de las atascadas y sincroniza. No borra nada. */
   retryStuck: () => Promise<SyncResult | null>;
+  /** Borra de la cola esas operaciones atascadas y la fila local que editaban. */
+  discardStuck: (ids: number[]) => Promise<void>;
   refreshPendingCount: () => Promise<void>;
 }
 
@@ -44,6 +52,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
   isSyncing: false,
   pendingCount: 0,
   skippedCount: 0,
+  stuckIds: [],
   stuckReason: null,
   lastSyncAt: null,
   lastSyncResult: null,
@@ -93,6 +102,19 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     return get().sync();
   },
 
+  discardStuck: async (ids) => {
+    // Sin guard de `isSyncing`: el sync salta las atascadas (retryCount >=
+    // MAX_RETRIES en su lectura), así que borrarlas en paralelo es seguro.
+    try {
+      await discardPendingOperations(ids);
+    } catch {
+      // ignorar: los contadores de abajo reflejan lo que quedó
+    }
+    await get().refreshPendingCount();
+    // Se borraron filas locales: las pantallas deben releer.
+    queryClient.invalidateQueries();
+  },
+
   refreshPendingCount: async () => {
     try {
       const ops = await getPendingOperations();
@@ -100,6 +122,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
       set({
         pendingCount: ops.length,
         skippedCount: stuck.length,
+        stuckIds: stuck.map((op) => op.id),
         stuckReason: stuck.find((op) => op.lastError)?.lastError ?? null,
       });
     } catch {

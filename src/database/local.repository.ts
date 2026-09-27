@@ -1400,6 +1400,31 @@ export async function resetStuckOperations(maxRetries: number): Promise<void> {
 }
 
 /**
+ * "Descartar": saca de la cola las operaciones indicadas y la fila local que
+ * editaban. Un CREATE nunca llegó al servidor (si no, quedaría un registro
+ * fantasma que jamás sincroniza); un UPDATE deja la fila con cambios que el
+ * servidor no tiene, o que ya no existe allá (404): el refetch la repone si
+ * sigue existiendo. Un DELETE ya borró su fila; el refetch la repone.
+ */
+export async function discardPendingOperations(ids: number[]): Promise<void> {
+  const db = await getDatabase();
+  await db.withTransactionAsync(async () => {
+    for (const id of ids) {
+      const op = await db.getFirstAsync<{ entity: string; operation: string; local_id: string }>(
+        "SELECT entity, operation, local_id FROM pending_operations WHERE id = ?",
+        [id],
+      );
+      if (!op) continue;
+      const table = ENTITY_TABLES.get(op.entity);
+      if (op.operation !== "DELETE" && table) {
+        await db.runAsync(`DELETE FROM ${table} WHERE local_id = ?`, [op.local_id]);
+      }
+      await db.runAsync("DELETE FROM pending_operations WHERE id = ?", [id]);
+    }
+  });
+}
+
+/**
  * Marca una fila como sincronizada: su id local pasa a ser el del servidor.
  * Remapea las referencias a ese id (transacciones, pagos y payloads de la
  * cola). Si el servidor ya estaba cacheado con ese id (refetch antes de

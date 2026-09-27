@@ -32,6 +32,8 @@ function setupOfflineStore(overrides: {
   setOnlineStatus?: jest.Mock;
   sync?: jest.Mock;
   retryStuck?: jest.Mock;
+  discardStuck?: jest.Mock;
+  stuckIds?: number[];
 }) {
   const defaults = {
     isOnline: true,
@@ -129,5 +131,43 @@ describe("OfflineBanner", () => {
     fireEvent.press(screen.getByText("Reintentar"));
     expect(retryStuck).toHaveBeenCalledTimes(1);
     expect(sync).not.toHaveBeenCalled();
+  });
+
+  it("'Descartar' pide confirmación antes de llamar a discardStuck", () => {
+    const discardStuck = jest.fn();
+    setupOfflineStore({ isOnline: true, pendingCount: 1, skippedCount: 1, stuckIds: [7], discardStuck });
+
+    render(<OfflineBanner />);
+
+    fireEvent.press(screen.getByRole("button", { name: /Descartar 1 cambio/ }));
+    expect(discardStuck).not.toHaveBeenCalled();
+    expect(screen.getByText(/no se podrán recuperar/)).toBeTruthy();
+
+    fireEvent.press(screen.getByText("Descartar cambios"));
+    expect(discardStuck).toHaveBeenCalledWith([7]);
+  });
+
+  it("cancelar la confirmación no descarta nada", () => {
+    const discardStuck = jest.fn();
+    setupOfflineStore({ isOnline: true, pendingCount: 1, skippedCount: 1, stuckIds: [7], discardStuck });
+
+    render(<OfflineBanner />);
+    fireEvent.press(screen.getByRole("button", { name: /Descartar 1 cambio/ }));
+    fireEvent.press(screen.getByText("Cancelar"));
+
+    expect(discardStuck).not.toHaveBeenCalled();
+  });
+
+  it("el diálogo abierto sobrevive a que arranque un sync (no desaparece ni reaparece solo)", () => {
+    const discardStuck = jest.fn();
+    setupOfflineStore({ isOnline: true, pendingCount: 1, skippedCount: 1, stuckIds: [7], discardStuck });
+    const view = render(<OfflineBanner />);
+    fireEvent.press(screen.getByRole("button", { name: /Descartar 1 cambio/ }));
+
+    setupOfflineStore({ isOnline: true, pendingCount: 1, skippedCount: 1, stuckIds: [7, 8], isSyncing: true, discardStuck });
+    view.rerender(<OfflineBanner />);
+    fireEvent.press(screen.getByText("Descartar cambios"));
+
+    expect(discardStuck).toHaveBeenCalledWith([7]);
   });
 });

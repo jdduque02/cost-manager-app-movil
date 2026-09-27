@@ -26,6 +26,7 @@ import {
   saveTransactions,
   updateLocalTransaction,
   wipeLocalUserData,
+  discardPendingOperations,
 } from "../local.repository";
 import { MAX_RETRIES } from "../local-refs";
 import type { TransactionRecordResponse } from "@/types/transaction.types";
@@ -315,3 +316,27 @@ describe("payload dañado en la cola", () => {
   });
 });
 
+describe("Descartar operaciones atascadas", () => {
+  it("un CREATE descartado borra también su fila local (nunca existió en el servidor)", async () => {
+    const local = await createLocalTransaction(USER, txDto);
+    await saveTransactions([serverTx(41)]);
+    const ops = await getPendingOperations();
+
+    await discardPendingOperations(ops.map((op) => op.id));
+
+    expect(await getPendingOperations()).toEqual([]);
+    expect((await getLocalTransactions(USER)).map((r) => r.id)).toEqual([41]);
+    expect(local.id).toBeLessThan(0);
+  });
+
+  it("un UPDATE descartado (p. ej. 404) saca su fila del caché; el refetch la repone si aún existe", async () => {
+    await saveTransactions([serverTx(40), serverTx(41)]);
+    await updateLocalTransaction(USER, 40, { amount: 1 });
+    const [op] = await getPendingOperations();
+
+    await discardPendingOperations([op.id]);
+
+    expect(await getPendingOperations()).toEqual([]);
+    expect((await getLocalTransactions(USER)).map((r) => r.id)).toEqual([41]);
+  });
+});

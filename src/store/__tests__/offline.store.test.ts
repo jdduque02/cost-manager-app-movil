@@ -6,7 +6,11 @@
 
 import { useOfflineStore, stopPeriodicSync } from "../offline.store";
 import { syncPendingOperations } from "@/database/sync.service";
-import { getPendingOperations, resetStuckOperations } from "@/database/local.repository";
+import {
+  getPendingOperations,
+  resetStuckOperations,
+  discardPendingOperations,
+} from "@/database/local.repository";
 
 jest.mock("@/database/sync.service", () => ({
   syncPendingOperations: jest.fn(),
@@ -16,11 +20,15 @@ jest.mock("@/database/sync.service", () => ({
 jest.mock("@/database/local.repository", () => ({
   getPendingOperations: jest.fn(),
   resetStuckOperations: jest.fn(),
+  discardPendingOperations: jest.fn(),
 }));
+
+jest.mock("@/lib/queryClient", () => ({ queryClient: { invalidateQueries: jest.fn() } }));
 
 const mockSync = syncPendingOperations as jest.Mock;
 const mockGetPending = getPendingOperations as jest.Mock;
 const mockResetStuck = resetStuckOperations as jest.Mock;
+const mockDiscard = discardPendingOperations as jest.Mock;
 
 const mockSyncResult = { synced: 2, failed: 0, skipped: 0 };
 
@@ -184,5 +192,29 @@ describe("retryStuck", () => {
 
     expect(await useOfflineStore.getState().retryStuck()).toBeNull();
     expect(mockResetStuck).not.toHaveBeenCalled();
+  });
+});
+
+// ─── discardStuck ─────────────────────────────────────────────────────────────
+
+describe("discardStuck", () => {
+  it("expone los ids atascados y descarta exactamente los que recibe, aunque haya un sync en curso", async () => {
+    mockGetPending
+      .mockResolvedValueOnce([
+        { id: 1, retryCount: 0, lastError: null },
+        { id: 2, retryCount: 3, lastError: "Ya no existe" },
+      ])
+      .mockResolvedValueOnce([{ id: 1, retryCount: 0, lastError: null }]);
+    mockDiscard.mockResolvedValueOnce(undefined);
+
+    await useOfflineStore.getState().refreshPendingCount();
+    expect(useOfflineStore.getState().stuckIds).toEqual([2]);
+
+    useOfflineStore.setState({ isSyncing: true });
+    await useOfflineStore.getState().discardStuck([2]);
+
+    expect(mockDiscard).toHaveBeenCalledWith([2]);
+    expect(useOfflineStore.getState().pendingCount).toBe(1);
+    expect(useOfflineStore.getState().stuckIds).toEqual([]);
   });
 });
