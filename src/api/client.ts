@@ -314,6 +314,15 @@ export function unwrapList<T>(
 }
 
 /**
+ * `true` si la respuesta es de verdad una lista (desnuda o `{ data: [...] }`).
+ * `unwrapList` devuelve `[]` también ante una forma inesperada: solo una lista
+ * verificada autoriza a podar el caché offline (si no, lo vaciaría entero).
+ */
+export function isListPayload(data: unknown): boolean {
+  return Array.isArray(data) || Array.isArray((data as { data?: unknown } | null)?.data);
+}
+
+/**
  * Instancia central de Axios para todas las peticiones a la API.
  * - Añade automáticamente el token Bearer via interceptor de request.
  * - Desenvuelve automáticamente el envelope `{status, data, timestamp}` del backend.

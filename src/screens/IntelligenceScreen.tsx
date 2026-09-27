@@ -8,6 +8,7 @@ import * as transactionsApi from "@/api/transactions.api";
 import * as catalogApi from "@/api/catalog.api";
 import * as usersApi from "@/api/users.api";
 import { Card } from "@/components/ui/Card";
+import { Money } from "@/components/ui/Money";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -15,6 +16,7 @@ import { IconTile } from "@/components/ui/IconTile";
 import { Shield, TrendingUp, GraduationCap, Rocket, House, Sunset, type LucideIcon } from "@/components/ui/icons";
 import { PROFILE_BUCKET_LABELS, type ProfileBucket } from "@/types/catalog.types";
 import { formatCurrency } from "@/utils/format";
+import type { SummaryCurrency } from "@/types/transaction.types";
 
 interface TaxSummary {
   fiscal_year: number;
@@ -112,20 +114,33 @@ export default function IntelligenceScreen() {
   );
   const today = useMemo(() => new Date().toISOString().split("T")[0], []);
 
-  const { data: monthSummary, isLoading: summaryLoading } = useOfflineQuery<TransactionSummary>(
-    {
-      queryKey: ["intelligence-month-summary", userId, monthStart, today],
-      queryFn: async () => {
-        const s = await transactionsApi.getTransactionSummary(userId as number, {
-          date_from: monthStart,
-          date_to: today,
-          group_by: "month",
-        });
-        return { totals: s.totals, by_category: s.by_category };
-      },
-      enabled: !!userId,
+  // Un resumen por moneda (la moneda va en la queryKey): tasa de ahorro y
+  // presupuesto salen solo de COP; lo que haya en USD se muestra aparte.
+  const monthSummaryQuery = (currency: SummaryCurrency) => ({
+    queryKey: ["intelligence-month-summary", userId, currency, monthStart, today],
+    queryFn: async (): Promise<TransactionSummary> => {
+      const s = await transactionsApi.getTransactionSummary(userId as number, {
+        date_from: monthStart,
+        date_to: today,
+        group_by: "month",
+        currency,
+      });
+      return { totals: s.totals, by_category: s.by_category };
     },
-    async () => ({ totals: { income: 0, expenses: 0, investments: 0, count: 0 }, by_category: [] }),
+    enabled: !!userId,
+  });
+  const emptySummary = async (): Promise<TransactionSummary> => ({
+    totals: { income: 0, expenses: 0, investments: 0, count: 0 },
+    by_category: [],
+  });
+
+  const { data: monthSummary, isLoading: summaryLoading } = useOfflineQuery<TransactionSummary>(
+    monthSummaryQuery("COP"),
+    emptySummary,
+  );
+  const { data: usdMonthSummary } = useOfflineQuery<TransactionSummary>(
+    monthSummaryQuery("USD"),
+    emptySummary,
   );
 
   const { data: categories, isLoading: catLoading } = useOfflineQuery(
@@ -219,6 +234,18 @@ export default function IntelligenceScreen() {
                 {formatCurrency(monthSummary?.totals.expenses ?? 0)}
               </Text>
             </View>
+            {usdMonthSummary && usdMonthSummary.totals.count > 0 && (
+              <>
+                <View className="flex-row justify-between">
+                  <Text className="text-sm font-sans text-foreground">Ingresos (USD)</Text>
+                  <Money value={usdMonthSummary.totals.income} currency="USD" className="text-sm text-success" />
+                </View>
+                <View className="flex-row justify-between">
+                  <Text className="text-sm font-sans text-foreground">Gastos (USD)</Text>
+                  <Money value={usdMonthSummary.totals.expenses} currency="USD" className="text-sm text-destructive" />
+                </View>
+              </>
+            )}
             <View className="flex-row justify-between">
               <Text className="text-sm font-sans text-foreground">Tasa de ahorro</Text>
               <Text className="text-sm font-num-semibold text-primary">{savingsRate.toFixed(1)}%</Text>

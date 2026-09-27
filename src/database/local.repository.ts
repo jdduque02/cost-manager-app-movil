@@ -258,6 +258,74 @@ export async function clearCachedUser(): Promise<void> {
   await clearSecurelyCachedUserProfile();
 }
 
+// ─── Poda del caché ──────────────────────────────────────────────────────────
+//
+// Tras un fetch COMPLETO del servidor se borran las filas cacheadas que el
+// servidor ya no devolvió (borradas desde otro dispositivo o la web); sin esto
+// quedaban como fantasmas en el caché offline. Flujo en la capa API:
+// `getCachedIds` ANTES del GET → GET → `saveX(items, before)`. Solo se podan
+// ids del snapshot previo: una fila creada o sincronizada mientras el GET
+// viajaba no está en él, así que una respuesta "vieja" no la borra.
+// Una lista paginada o filtrada NO poda (lo que no vino puede existir), salvo
+// que el filtro acote el snapshot al mismo alcance (subcategorías por categoría).
+
+/** Tablas con poda. `categories` no: el API cachea la lista 60 s y otras tablas la referencian por FK. */
+export type PrunableTable =
+  | "bank_accounts"
+  | "companies"
+  | "subcategories"
+  | "financial_assets"
+  | "financial_liabilities";
+
+/** Ids del servidor (positivos) cacheados para `userId` (y `categoryId`, en subcategorías). */
+export async function getCachedIds(
+  table: PrunableTable,
+  userId: number,
+  categoryId?: number,
+): Promise<number[]> {
+  const db = await getDatabase();
+  // `table` es un literal de PrunableTable, no input externo.
+  const rows = await db.getAllAsync<{ id: number }>(
+    `SELECT id FROM ${table} WHERE id > 0 AND user_id = ?${categoryId ? " AND category_id = ?" : ""}`,
+    categoryId ? [userId, categoryId] : [userId],
+  );
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Borra los ids de `before` que no vinieron en `keep`. Best-effort y fuera de
+ * la transacción del upsert: si falla, el caché queda con fantasmas pero con
+ * los datos frescos (antes un error aquí revertía todo el refresco en silencio).
+ */
+async function pruneMissing(
+  table: PrunableTable,
+  before: number[],
+  keep: { id: number }[],
+  guard = "",
+): Promise<void> {
+  const kept = new Set(keep.map((k) => k.id));
+  const gone = before.filter((id) => !kept.has(id));
+  if (gone.length === 0) return;
+  try {
+    const db = await getDatabase();
+    await db.runAsync(
+      `DELETE FROM ${table} WHERE id IN (${gone.map(() => "?").join(",")}) ${guard}`,
+      gone,
+    );
+  } catch (err) {
+    console.warn(`[cache] no se pudo podar ${table}`, err);
+  }
+}
+
+/**
+ * Nunca podar una fila creada offline (su `local_id` no es su id) ni una con
+ * operaciones en la cola, activas o atascadas: son cambios sin sincronizar.
+ */
+function unsyncedGuard(table: "bank_accounts" | "companies"): string {
+  return `AND local_id = CAST(id AS TEXT)
+     AND NOT EXISTS (SELECT 1 FROM pending_operations p WHERE p.entity = '${table}' AND p.local_id = ${table}.local_id)`;
+}
+
 // ─── Categorías ──────────────────────────────────────────────────────────────
 
 export async function saveCategories(
@@ -313,6 +381,8 @@ export async function getLocalCategories(): Promise<CategoryResponse[]> {
 
 export async function saveSubcategories(
   subs: SubcategoryResponse[],
+  /** Snapshot `getCachedIds` previo al fetch completo; omitir en lotes parciales (poda). */
+  before?: number[],
 ): Promise<void> {
   const db = await getDatabase();
   for (const s of subs) {
@@ -331,6 +401,7 @@ export async function saveSubcategories(
       ],
     );
   }
+  if (before) await pruneMissing("subcategories", before, subs);
 }
 
 export async function getLocalSubcategories(
@@ -369,6 +440,8 @@ export async function getLocalSubcategories(
 
 export async function saveBankAccounts(
   accounts: BankAccountResponse[],
+  /** Snapshot `getCachedIds` previo al fetch completo; omitir al guardar una fila suelta. */
+  before?: number[],
 ): Promise<void> {
   const db = await getDatabase();
   // Ver comentario de `saveCategories` — un solo commit por lote.
@@ -393,6 +466,7 @@ export async function saveBankAccounts(
       );
     }
   });
+  if (before) await pruneMissing("bank_accounts", before, accounts, unsyncedGuard("bank_accounts"));
 }
 
 export async function getLocalBankAccounts(
@@ -543,6 +617,11 @@ export async function deleteLocalBankAccount(
 
 // ─── Transacciones ────────────────────────────────────────────────────────────
 
+/**
+ * Sin poda a propósito: la lista de transacciones es paginada y filtrada por
+ * fechas, así que lo que no vino en una página puede seguir existiendo. Lo
+ * mismo `saveObjectives`: hoy solo guarda filas sueltas de crear/editar.
+ */
 export async function saveTransactions(
   transactions: TransactionRecordResponse[],
 ): Promise<void> {
@@ -1027,7 +1106,11 @@ export async function deleteLocalObjective(
 // creación inline "al vuelo" desde el formulario de transacciones. Solo
 // soportan CREATE offline (no editar/borrar desde móvil todavía).
 
-export async function saveCompanies(companies: EmpresaResponse[]): Promise<void> {
+export async function saveCompanies(
+  companies: EmpresaResponse[],
+  /** Snapshot `getCachedIds` previo al fetch completo; omitir al guardar una fila suelta. */
+  before?: number[],
+): Promise<void> {
   const db = await getDatabase();
   // Ver comentario de `saveCategories` — un solo commit por lote.
   await db.withTransactionAsync(async () => {
@@ -1047,6 +1130,7 @@ export async function saveCompanies(companies: EmpresaResponse[]): Promise<void>
       );
     }
   });
+  if (before) await pruneMissing("companies", before, companies, unsyncedGuard("companies"));
 }
 
 export async function getLocalCompanies(userId: number): Promise<EmpresaResponse[]> {
@@ -1111,6 +1195,8 @@ export async function createLocalCompany(
 
 export async function saveFinancialAssets(
   assets: FinancialAssetResponse[],
+  /** Snapshot `getCachedIds` previo al fetch completo (activa la poda). */
+  before?: number[],
 ): Promise<void> {
   const db = await getDatabase();
   for (const a of assets) {
@@ -1130,6 +1216,7 @@ export async function saveFinancialAssets(
       ],
     );
   }
+  if (before) await pruneMissing("financial_assets", before, assets);
 }
 
 export async function getLocalFinancialAssets(
@@ -1162,6 +1249,8 @@ export async function getLocalFinancialAssets(
 
 export async function saveFinancialLiabilities(
   liabilities: FinancialLiabilityResponse[],
+  /** Snapshot `getCachedIds` previo al fetch completo (activa la poda). */
+  before?: number[],
 ): Promise<void> {
   const db = await getDatabase();
   for (const l of liabilities) {
@@ -1181,6 +1270,7 @@ export async function saveFinancialLiabilities(
       ],
     );
   }
+  if (before) await pruneMissing("financial_liabilities", before, liabilities);
 }
 
 export async function getLocalFinancialLiabilities(

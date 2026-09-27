@@ -1,4 +1,4 @@
-import { formatDateTime } from "../format";
+import { formatCurrency, formatDateTime } from "../format";
 import { formatEventDetails } from "@/screens/AccessHistoryScreen";
 
 describe("formatDateTime", () => {
@@ -21,5 +21,14 @@ describe("formatEventDetails", () => {
     ).toBe("username: ana · auth_method: openid-connect");
     expect(formatEventDetails({ nested: { a: 1 } })).toBe('nested: {"a":1}');
     expect(formatEventDetails({})).toBe("");
+  });
+});
+
+describe("formatCurrency", () => {
+  it("COP sin decimales por defecto y USD con centavos, cada uno con su símbolo", () => {
+    expect(formatCurrency(1500000.4)).toBe(formatCurrency(1500000.4, "COP"));
+    expect(formatCurrency(1500000.4)).not.toMatch(/,\d{2}$/);
+    expect(formatCurrency(12.5, "USD")).toMatch(/US\$/);
+    expect(formatCurrency(12.5, "USD")).toMatch(/12,50/);
   });
 });

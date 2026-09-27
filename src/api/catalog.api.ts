@@ -1,4 +1,4 @@
-import { apiClient, unwrapList } from "./client";
+import { apiClient, isListPayload, unwrapList } from "./client";
 import * as localRepo from "@/database/local.repository";
 import type {
   CategoryResponse,
@@ -57,11 +57,18 @@ export async function getSubcategories(
   categoryId?: number,
 ): Promise<SubcategoryResponse[]> {
   const qs = categoryId ? `?categoryId=${categoryId}` : "";
+  // El filtro por categoría devuelve TODAS las de esa categoría: se poda con un
+  // snapshot del mismo alcance, nunca las de otras categorías.
+  const before = await localRepo
+    .getCachedIds("subcategories", userId, categoryId)
+    .catch(() => undefined);
   const { data } = await apiClient.get<
     SubcategoryResponse[] | { data: SubcategoryResponse[]; total?: number }
   >(`/users/${userId}/catalog/subcategories${qs}`);
   const subcategories = unwrapList(data);
-  await localRepo.saveSubcategories(subcategories).catch(() => {});
+  await localRepo
+    .saveSubcategories(subcategories, isListPayload(data) ? before : undefined)
+    .catch(() => {});
   return subcategories;
 }
 
