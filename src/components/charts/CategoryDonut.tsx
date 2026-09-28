@@ -62,8 +62,8 @@ export function CategoryDonut({ points }: CategoryDonutProps) {
             radius={radius}
             innerRadius={radius * 0.6}
             innerCircleColor={colors.card}
-            strokeWidth={3}
-            strokeColor={colors.card}
+            strokeWidth={1}
+            strokeColor={colors.cardBorder}
           />
         )}
       </View>
