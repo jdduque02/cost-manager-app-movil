@@ -21,6 +21,7 @@ import * as Haptics from "expo-haptics";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/auth.store";
 import * as transactionsApi from "@/api/transactions.api";
+import { apiErrorMessage } from "@/api/client";
 import * as catalogApi from "@/api/catalog.api";
 import * as objectivesApi from "@/api/objectives.api";
 import * as empresasApi from "@/api/empresas.api";
@@ -454,7 +455,8 @@ export default function TransactionsScreen() {
       setShowCreateCategoryModal(false);
       setNewCategoryForm({ name: "", icon_key: "" });
     },
-    onError: () => Alert.alert("Error", "No se pudo crear la categoría"),
+    onError: (err: unknown) =>
+      Alert.alert("Error", apiErrorMessage(err, "No se pudo crear la categoría")),
   });
 
   const createSubcategoryMutation = useMutation({
@@ -471,7 +473,8 @@ export default function TransactionsScreen() {
       setShowCreateSubcategoryModal(false);
       setNewSubcategoryForm({ name: "", icon_key: "" });
     },
-    onError: () => Alert.alert("Error", "No se pudo crear la subcategoría"),
+    onError: (err: unknown) =>
+      Alert.alert("Error", apiErrorMessage(err, "No se pudo crear la subcategoría")),
   });
 
   function handleCreateCategory() {
@@ -505,7 +508,8 @@ export default function TransactionsScreen() {
       setShowCreateObjectiveModal(false);
       setNewObjectiveForm({ name: "", type: "goal", target_amount: "" });
     },
-    onError: () => Alert.alert("Error", "No se pudo crear la meta"),
+    onError: (err: unknown) =>
+      Alert.alert("Error", apiErrorMessage(err, "No se pudo crear la meta")),
   });
 
   function handleCreateObjective() {
@@ -524,7 +528,8 @@ export default function TransactionsScreen() {
       setShowCreateCompanyModal(false);
       setNewCompanyForm({ name: "" });
     },
-    onError: () => Alert.alert("Error", "No se pudo crear la empresa"),
+    onError: (err: unknown) =>
+      Alert.alert("Error", apiErrorMessage(err, "No se pudo crear la empresa")),
   });
 
   function handleCreateCompany() {

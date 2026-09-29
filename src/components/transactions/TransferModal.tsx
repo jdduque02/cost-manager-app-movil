@@ -7,6 +7,7 @@ import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import { Chip } from "@/components/ui/Chip";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
 import * as transfersApi from "@/api/transfers.api";
+import { apiErrorMessage } from "@/api/client";
 import type { BankAccountResponse, FinancialLiabilityResponse } from "@/types/banking.types";
 import type { CreateTransferDto } from "@/types/transfer.types";
 
@@ -83,7 +84,10 @@ export function TransferModal({
       onClose();
     },
     onError: (err: unknown) => {
-      Alert.alert("Error", err instanceof Error ? err.message : "Error al crear la transferencia");
+      Alert.alert(
+        "Error",
+        apiErrorMessage(err, "Error al crear la transferencia"),
+      );
     },
   });
 

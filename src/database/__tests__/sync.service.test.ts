@@ -7,6 +7,7 @@
 
 import { AxiosError, AxiosHeaders } from "axios";
 import { syncPendingOperations, MAX_RETRIES } from "../sync.service";
+import { BLOCKED_NETWORK_MESSAGE } from "@/api/client";
 import {
   getPendingOperations,
   deletePendingOperation,
@@ -241,7 +242,6 @@ describe("syncPendingOperations", () => {
     it.each([
       ["red", new AxiosError("Network Error", "ERR_NETWORK")],
       ["5xx", httpError(503, "unavailable")],
-      ["Cloud Armor", httpError(403, "<html>403</html>")],
     ])("%s cuenta un reintento y no marca fallo permanente", async (_label, err) => {
       mockGetPending.mockResolvedValueOnce([{ ...op }]);
       mockCreateBankAccount.mockRejectedValueOnce(err);
@@ -250,6 +250,34 @@ describe("syncPendingOperations", () => {
 
       expect(mockIncRetry).toHaveBeenCalledWith(7);
       expect(mockMarkFailed).not.toHaveBeenCalled();
+    });
+
+    // Un 403 de Cloud Armor (cuerpo que no es JSON del API) no se arregla
+    // reintentando: la IP no está en la allowlist. Antes gastaba los 3 reintentos
+    // en la misma corrida y el usuario veía "3 de 3" en vez del motivo real.
+    it("un 403 de Cloud Armor queda atascado con su motivo, sin gastar reintentos", async () => {
+      mockGetPending.mockResolvedValueOnce([{ ...op }]);
+      mockCreateBankAccount.mockRejectedValueOnce(httpError(403, "<html>403</html>"));
+
+      const result = await syncPendingOperations();
+
+      expect(mockMarkFailed).toHaveBeenCalledWith(7, BLOCKED_NETWORK_MESSAGE, MAX_RETRIES);
+      expect(mockIncRetry).not.toHaveBeenCalled();
+      expect(mockDelete).not.toHaveBeenCalled();
+      expect(result.failed).toBe(1);
+    });
+
+    // Un 403 con cuerpo JSON sí viene del API (permisos/rol), no de Cloud Armor.
+    it("un 403 con cuerpo JSON del API se trata como rechazo del servidor", async () => {
+      mockGetPending.mockResolvedValueOnce([{ ...op }]);
+      mockCreateBankAccount.mockRejectedValueOnce(
+        httpError(403, { status: 403, message: "Sin permiso", timestamp: "t" }),
+      );
+
+      await syncPendingOperations();
+
+      expect(mockMarkFailed).toHaveBeenCalledWith(7, "Sin permiso", MAX_RETRIES);
+      expect(mockIncRetry).not.toHaveBeenCalled();
     });
   });
 

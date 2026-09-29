@@ -21,8 +21,12 @@ declare module "axios" {
 const API_BASE_URL: string =
   Constants.expoConfig?.extra?.API_BASE_URL ?? "http://localhost:3000/api/v1";
 
-// Log the API URL on startup for debugging network issues
-console.log(`[API] Base URL: ${API_BASE_URL}`);
+// Log the API URL on startup for debugging network issues.
+// Solo en dev: `__DEV__` se inlinea a false en release, así que el bloque
+// desaparece del bundle en producción y la URL no queda en los logs.
+if (__DEV__) {
+  console.log(`[API] Base URL: ${API_BASE_URL}`);
+}
 
 // Advertir si se usa HTTP fuera de localhost en cualquier build
 if (

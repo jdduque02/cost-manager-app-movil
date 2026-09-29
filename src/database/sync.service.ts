@@ -243,7 +243,12 @@ export async function syncPendingOperations(): Promise<SyncResult> {
         result.synced++;
         continue;
       }
-      if (classifyApiError(err) === "client") {
+      // `blocked` (403 de Cloud Armor) es tan terminal como `client`: la IP no
+      // está en la allowlist y reintentar 3 veces en la misma corrida solo genera
+      // spam de red y de logs sin posibilidad de éxito. `apiErrorMessage` ya
+      // devuelve BLOCKED_NETWORK_MESSAGE para ese caso.
+      const kind = classifyApiError(err);
+      if (kind === "client" || kind === "blocked") {
         await markOperationFailed(
           op.id,
           status === 404 && op.operation === "UPDATE"

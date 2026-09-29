@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import * as statementApi from "@/api/statement-imports.api";
+import { apiErrorMessage } from "@/api/client";
 import type { StatementImportRecord } from "@/types/statement-import.types";
 import { ArrowLeft, CloudUpload, FileText, CircleAlert, X, Trash } from "@/components/ui/icons";
 import { toast } from "@/utils/toast";
@@ -99,8 +100,8 @@ export default function StatementImportScreen() {
       queryClient.invalidateQueries({ queryKey: ["statement-imports", userId] });
       toast.success("Extracto subido", "Se está procesando en segundo plano.");
     },
-    onError: (err: Error) => {
-      toast.error("Error al subir extractos", err.message || undefined);
+    onError: (err: unknown) => {
+      toast.error("Error al subir extractos", apiErrorMessage(err, "Error al subir extractos"));
     },
   });
 

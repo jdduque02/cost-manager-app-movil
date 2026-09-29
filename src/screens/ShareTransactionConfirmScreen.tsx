@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/auth.store";
 import * as catalogApi from "@/api/catalog.api";
+import { apiErrorMessage } from "@/api/client";
 import * as bankingApi from "@/api/banking.api";
 import * as localRepo from "@/database/local.repository";
 import { useOfflineQuery } from "@/hooks/useOfflineQuery";
@@ -110,7 +111,7 @@ export default function ShareTransactionConfirmScreen({
     onError: (err: unknown) => {
       Alert.alert(
         "Error",
-        err instanceof Error ? err.message : "Error al registrar la transacción",
+        apiErrorMessage(err, "Error al registrar la transacción"),
       );
     },
   });

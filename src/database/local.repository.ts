@@ -357,6 +357,9 @@ export async function saveCategories(
 
 export async function getLocalCategories(): Promise<CategoryResponse[]> {
   const db = await getDatabase();
+  // `WHERE is_active = 1` espeja CategoryRepository.findAll() del API: online el
+  // usuario solo ve activas, y sin este filtro una categoría desactivada desde
+  // otroDevice seguía apareciendo en el fallback offline.
   const rows = await db.getAllAsync<{
     id: number;
     name: string;
@@ -366,7 +369,7 @@ export async function getLocalCategories(): Promise<CategoryResponse[]> {
     sort_order: number;
     is_active: number;
     created_at: string;
-  }>("SELECT * FROM categories");
+  }>("SELECT * FROM categories WHERE is_active = 1");
   return rows.map((r) => ({
     id: r.id,
     name: r.name,

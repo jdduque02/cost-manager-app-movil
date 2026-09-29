@@ -7,6 +7,7 @@ import { useReducedMotion, EASE_STANDARD } from "@/utils/animations";
 import { useLocalSearchParams, router } from "expo-router";
 import { useAuthStore } from "@/store/auth.store";
 import * as objectivesApi from "@/api/objectives.api";
+import { apiErrorMessage } from "@/api/client";
 import { useOfflineQuery } from "@/hooks/useOfflineQuery";
 import { useOfflineStore } from "@/store/offline.store";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -129,7 +130,10 @@ export default function ObjectiveDetailScreen() {
     onError: (err: unknown) => {
       setShowConfirmPay(false);
       setShowPayModal(true);
-      toast.error("Error al registrar pago", err instanceof Error ? err.message : undefined);
+      toast.error(
+        "Error al registrar pago",
+        apiErrorMessage(err, "Error al registrar pago"),
+      );
     },
   });
 
