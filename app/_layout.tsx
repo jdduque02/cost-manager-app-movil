@@ -27,6 +27,7 @@ import { useOfflineStore, startPeriodicSync, stopPeriodicSync } from "@/store/of
 import { getDatabase } from "@/database/database.service";
 import { ThemeProvider, useAppTheme } from "@/components/ThemeProvider";
 import { AppToast } from "@/components/ui/Toast";
+import { useStatementImportsWatcher } from "@/hooks/useStatementImports";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -38,6 +39,7 @@ function RootLayoutInner() {
   const wasAuthenticated = useRef(isAuthenticated);
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntentContext();
   const rootNavigationState = useRootNavigationState();
+  useStatementImportsWatcher();
 
   // Redirige a login cuando la sesión pasa de autenticada a no-autenticada
   // (expiración irrecuperable o logout), no en el montaje inicial.

@@ -48,6 +48,8 @@ export async function uploadStatementImport(
     accountId?: number;
     skipDuplicates?: boolean;
     defaultType?: "income" | "expense" | "investment";
+    assignCategories?: boolean;
+    captureCompanies?: boolean;
   },
 ): Promise<StatementImportRecord> {
   const formData = new FormData();
@@ -69,6 +71,10 @@ export async function uploadStatementImport(
     formData.append("skip_duplicates", String(options.skipDuplicates));
   if (options.defaultType)
     formData.append("default_type", options.defaultType);
+  if (options.assignCategories !== undefined)
+    formData.append("assign_categories", String(options.assignCategories));
+  if (options.captureCompanies !== undefined)
+    formData.append("capture_companies", String(options.captureCompanies));
 
   const { data } = await apiClient.post<
     StatementImportRecord | StatementImportRecord[]

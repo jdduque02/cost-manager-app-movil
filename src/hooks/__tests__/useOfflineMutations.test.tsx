@@ -258,3 +258,44 @@ describe("useOfflineMutations - qué errores se encolan", () => {
     expect(mockDeleteLocalTransaction).not.toHaveBeenCalled();
   });
 });
+
+describe("useOfflineMutations - refresco de empresas tras crear/editar transacción", () => {
+  // El servidor llena `empresa.default_category_id` al categorizar a mano:
+  // las dos query keys de empresas (`companies` y `empresas`) deben refrescarse.
+  function spiedWrapper() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = jest.spyOn(queryClient, "invalidateQueries");
+    const Wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client: queryClient }, children);
+    const keys = () => invalidate.mock.calls.map((c) => c[0]?.queryKey);
+    return { Wrapper, keys };
+  }
+  const companyKeys = [
+    ["companies", 5],
+    ["empresas", 5],
+  ];
+
+  it("invalida empresas cuando create y update llegan al servidor", async () => {
+    mockStores(true);
+    (transactionsApi.createTransaction as jest.Mock).mockResolvedValueOnce({ id: 1 });
+    (transactionsApi.updateTransaction as jest.Mock).mockResolvedValueOnce({ id: 1 });
+    const { Wrapper, keys } = spiedWrapper();
+    const { result } = renderHook(() => useOfflineMutations(), { wrapper: Wrapper });
+
+    await result.current.createTransaction({} as never);
+    expect(keys()).toEqual(expect.arrayContaining(companyKeys));
+
+    await result.current.updateTransaction(1, {} as never);
+    expect(keys().filter((k) => k?.[0] === "empresas")).toHaveLength(2);
+  });
+
+  it("no invalida empresas en la ruta offline", async () => {
+    mockStores(false);
+    (localRepo.createLocalTransaction as jest.Mock).mockResolvedValueOnce({ id: -1 });
+    const { Wrapper, keys } = spiedWrapper();
+    const { result } = renderHook(() => useOfflineMutations(), { wrapper: Wrapper });
+
+    await result.current.createTransaction({} as never);
+    expect(keys()).not.toEqual(expect.arrayContaining([["empresas", 5]]));
+  });
+});

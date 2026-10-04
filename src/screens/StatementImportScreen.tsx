@@ -7,9 +7,10 @@ import {
   RefreshControl,
   Modal,
   Dimensions,
+  Switch,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { useAuthStore } from "@/store/auth.store";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -21,6 +22,7 @@ import { Input } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import * as statementApi from "@/api/statement-imports.api";
+import { useStatementImports, markStatementImportInFlight } from "@/hooks/useStatementImports";
 import { apiErrorMessage } from "@/api/client";
 import type { StatementImportRecord } from "@/types/statement-import.types";
 import { ArrowLeft, CloudUpload, FileText, CircleAlert, X, Trash } from "@/components/ui/icons";
@@ -65,26 +67,9 @@ export default function StatementImportScreen() {
   const [selectedFiles, setSelectedFiles] = useState<FileToUpload[]>([]);
   const [password, setPassword] = useState("");
   const [showUploadModal, setShowUploadModal] = useState(false);
-
-  const { data: imports, isLoading, refetch, isRefetching } = useQuery({
-    queryKey: ["statement-imports", userId],
-    queryFn: () => statementApi.getStatementImports(userId!),
-    enabled: !!userId,
-    // Progreso real mientras un import está en curso: el backend procesa en
-    // segundo plano (ver toast tras subir) y `total_records_created` va
-    // subiendo entre polls — reconsultamos cada 3s solo mientras haya algún
-    // import en `pending`/`processing`, y dejamos de hacerlo apenas todos
-    // quedan en un estado terminal (completed/partial/failed). Reemplaza el
-    // estado local `progress` que antes se calculaba y nunca se leía en el
-    // render (ver hallazgo H5.1 de la auditoría de sept/2026).
-    refetchInterval: (query) => {
-      const rows = query.state.data?.data ?? [];
-      const hasInFlight = rows.some(
-        (r) => r.status === "pending" || r.status === "processing",
-      );
-      return hasInFlight ? 3000 : false;
-    },
-  });
+  const [assignCategories, setAssignCategories] = useState(true);
+  const [captureCompanies, setCaptureCompanies] = useState(true);
+  const { data: imports, isLoading, refetch, isRefetching } = useStatementImports();
 
   const uploadMutation = useMutation({
     mutationFn: () =>
@@ -92,8 +77,11 @@ export default function StatementImportScreen() {
         password: password || undefined,
         skipDuplicates: true,
         defaultType: "expense",
+        assignCategories,
+        captureCompanies,
       }),
-    onSuccess: () => {
+    onSuccess: (record) => {
+      markStatementImportInFlight(record.id);
       setSelectedFiles([]);
       setPassword("");
       setShowUploadModal(false);
@@ -107,7 +95,8 @@ export default function StatementImportScreen() {
 
   const retryMutation = useMutation({
     mutationFn: (id: number) => statementApi.retryStatementImport(userId!, id),
-    onSuccess: () => {
+    onSuccess: (record) => {
+      markStatementImportInFlight(record.id);
       queryClient.invalidateQueries({ queryKey: ["statement-imports", userId] });
     },
   });
@@ -313,12 +302,43 @@ export default function StatementImportScreen() {
               secureTextEntry
             />
 
+            <View className="mb-4 gap-3">
+              <View className="flex-row items-center justify-between gap-3">
+                <Text className="flex-1 text-foreground font-sans text-sm">Auto-categorizar</Text>
+                <Switch
+                  accessibilityRole="switch"
+                  accessibilityLabel="Auto-categorizar"
+                  value={assignCategories}
+                  onValueChange={setAssignCategories}
+                  trackColor={{ false: c.muted, true: c.primary }}
+                />
+              </View>
+              <View className="flex-row items-center justify-between gap-3">
+                <View className="flex-1">
+                  <Text className="text-foreground font-sans text-sm">
+                    Capturar y registrar empresas
+                  </Text>
+                  <Text className="text-muted-foreground font-sans text-xs mt-0.5">
+                    Asocia cada movimiento a su comercio; si no existe lo crea (excepto retiros,
+                    transferencias y otras operaciones del banco)
+                  </Text>
+                </View>
+                <Switch
+                  accessibilityRole="switch"
+                  accessibilityLabel="Capturar y registrar empresas"
+                  value={captureCompanies}
+                  onValueChange={setCaptureCompanies}
+                  trackColor={{ false: c.muted, true: c.primary }}
+                />
+              </View>
+            </View>
+
             <Button
               onPress={() => uploadMutation.mutate()}
               loading={uploadMutation.isPending}
               disabled={selectedFiles.length === 0}
             >
-              Subir {selectedFiles.length} archivo{selectedFiles.length !== 1 ? "s" : ""}
+              {`Subir ${selectedFiles.length} archivo${selectedFiles.length !== 1 ? "s" : ""}`}
             </Button>
           </View>
         </View>
