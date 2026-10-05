@@ -11,10 +11,16 @@ import type {
   TransactionSummaryQuery,
 } from "@/types/transaction.types";
 
-function normalizeTransaction(
+/** pg manda bigint y numeric como string: `amount` y `recurring_id` a número. */
+export function normalizeTransaction(
   t: TransactionRecordResponse,
 ): TransactionRecordResponse {
-  return { ...t, amount: Number(t.amount ?? 0) };
+  return {
+    ...t,
+    amount: Number(t.amount ?? 0),
+    recurring_id: t.recurring_id == null ? null : Number(t.recurring_id),
+    needs_validation: t.needs_validation === true,
+  };
 }
 
 export async function getTransactions(

@@ -231,6 +231,16 @@ async function initSchema(database: SQLite.SQLiteDatabase): Promise<void> {
       FOREIGN KEY (objective_id) REFERENCES financial_objectives(id)
     );
 
+    -- Recurrentes: caché de SOLO LECTURA de la última lista completa del
+    -- servidor (R8.4). Se reemplaza entera en cada GET exitoso y nunca pasa por
+    -- pending_operations: crear/editar/cancelar requiere conexión (R8.5).
+    -- La fila se guarda como JSON: nadie consulta por sus campos.
+    CREATE TABLE IF NOT EXISTS recurring_transactions (
+      id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      payload TEXT NOT NULL
+    );
+
     -- Cola de operaciones pendientes para sincronizar
     CREATE TABLE IF NOT EXISTS pending_operations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -286,6 +296,8 @@ async function migrateTransactionsTable(database: SQLite.SQLiteDatabase): Promis
     ["installment_value", "REAL"],
     ["source_bank", "TEXT"],
     ["source_account", "TEXT"],
+    ["recurring_id", "INTEGER"],
+    ["needs_validation", "INTEGER DEFAULT 0"],
   ];
   for (const [name, type] of newColumns) {
     if (!existing.has(name)) {
