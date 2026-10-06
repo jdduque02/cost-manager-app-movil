@@ -7,7 +7,6 @@
 
 import { AxiosError, AxiosHeaders } from "axios";
 import { syncPendingOperations, MAX_RETRIES } from "../sync.service";
-import { BLOCKED_NETWORK_MESSAGE } from "@/api/client";
 import {
   getPendingOperations,
   deletePendingOperation,
@@ -252,19 +251,51 @@ describe("syncPendingOperations", () => {
       expect(mockMarkFailed).not.toHaveBeenCalled();
     });
 
-    // Un 403 de Cloud Armor (cuerpo que no es JSON del API) no se arregla
-    // reintentando: la IP no está en la allowlist. Antes gastaba los 3 reintentos
-    // en la misma corrida y el usuario veía "3 de 3" en vez del motivo real.
-    it("un 403 de Cloud Armor queda atascado con su motivo, sin gastar reintentos", async () => {
+    // Un 403 de Cloud Armor (cuerpo que no es JSON del API) depende de la red,
+    // no de la operación: queda pendiente con sus reintentos intactos.
+    it("un 403 de Cloud Armor deja la operación pendiente, sin gastar reintentos", async () => {
       mockGetPending.mockResolvedValueOnce([{ ...op }]);
       mockCreateBankAccount.mockRejectedValueOnce(httpError(403, "<html>403</html>"));
 
       const result = await syncPendingOperations();
 
-      expect(mockMarkFailed).toHaveBeenCalledWith(7, BLOCKED_NETWORK_MESSAGE, MAX_RETRIES);
+      expect(mockMarkFailed).not.toHaveBeenCalled();
       expect(mockIncRetry).not.toHaveBeenCalled();
       expect(mockDelete).not.toHaveBeenCalled();
       expect(result.failed).toBe(1);
+    });
+
+    it("corta el ciclo tras el primer bloqueo y una corrida posterior sincroniza todo", async () => {
+      const op2 = { ...op, id: 8, localId: "local_def" };
+      mockGetPending.mockResolvedValueOnce([{ ...op }, { ...op2 }]);
+      mockCreateBankAccount.mockRejectedValueOnce(httpError(403, "<html>403</html>"));
+
+      const blocked = await syncPendingOperations();
+
+      expect(mockCreateBankAccount).toHaveBeenCalledTimes(1);
+      expect(blocked).toEqual({ synced: 0, failed: 1, skipped: 0 });
+      expect(mockMarkFailed).not.toHaveBeenCalled();
+      expect(mockIncRetry).not.toHaveBeenCalled();
+
+      mockGetPending.mockResolvedValueOnce([{ ...op }, { ...op2 }]);
+      mockCreateBankAccount.mockResolvedValue({ id: 501 });
+
+      const allowed = await syncPendingOperations();
+
+      expect(allowed).toEqual({ synced: 2, failed: 0, skipped: 0 });
+      expect(mockDelete).toHaveBeenCalledWith(7);
+      expect(mockDelete).toHaveBeenCalledWith(8);
+    });
+
+    it("un 400 real del servidor sigue atascando la operación", async () => {
+      mockGetPending.mockResolvedValueOnce([{ ...op }]);
+      mockCreateBankAccount.mockRejectedValueOnce(
+        httpError(400, { status: 400, message: "Datos inválidos", timestamp: "t" }),
+      );
+
+      await syncPendingOperations();
+
+      expect(mockMarkFailed).toHaveBeenCalledWith(7, "Datos inválidos", MAX_RETRIES);
     });
 
     // Un 403 con cuerpo JSON sí viene del API (permisos/rol), no de Cloud Armor.
