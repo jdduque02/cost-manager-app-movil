@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { View, Text, ScrollView, Pressable, RefreshControl } from "react-native";
+import { router } from "expo-router";
 import { useAuthStore } from "@/store/auth.store";
 import { useQueryClient } from "@tanstack/react-query";
 import { useOfflineQuery } from "@/hooks/useOfflineQuery";
@@ -27,6 +28,20 @@ function timeAgo(dateStr: string): string {
   if (diffHr < 24) return `Hace ${diffHr}h`;
   if (diffDay < 7) return `Hace ${diffDay}d`;
   return date.toLocaleDateString("es-CO");
+}
+
+/**
+ * Destino de una notificación según su `reference` (R8.2). Las que no son de
+ * recurrentes no navegan. `recurring:validate:<txId>` abre la validación.
+ */
+function routeFor(reference: string | null) {
+  const [scope, kind, id] = (reference ?? "").split(":");
+  if (scope !== "recurring") return null;
+  if (kind === "validate" && id) {
+    return { pathname: "/(tabs)/transactions", params: { validate: id } } as const;
+  }
+  if (kind === "created" || kind === "not-adopted") return "/(tabs)/transactions" as const;
+  return "/recurring" as const;
 }
 
 export default function NotificationsScreen() {
@@ -137,7 +152,11 @@ export default function NotificationsScreen() {
             {(notifications ?? []).map((notification) => (
               <Pressable
                 key={notification.id}
-                onPress={() => !notification.is_read && handleMarkRead(notification.id)}
+                onPress={() => {
+                  if (!notification.is_read) handleMarkRead(notification.id);
+                  const target = routeFor(notification.reference);
+                  if (target) router.push(target);
+                }}
                 className="flex-row items-center gap-3 rounded-xl px-2 py-2.5"
               >
                 <IconTile
