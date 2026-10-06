@@ -51,7 +51,8 @@ jest.mock("@/database/local.repository", () => ({
 jest.mock("@/hooks/useOfflineMutations", () => ({ useOfflineMutations: () => ({}) }));
 jest.mock("@/utils/toast", () => ({ toast: { success: jest.fn(), error: jest.fn() } }));
 jest.mock("expo-router", () => ({
-  router: { push: jest.fn(), back: jest.fn() },
+  router: { push: jest.fn(), back: jest.fn(), setParams: jest.fn() },
+  useLocalSearchParams: () => ({}),
   Redirect: () => null,
 }));
 
