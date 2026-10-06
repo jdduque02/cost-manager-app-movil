@@ -72,12 +72,26 @@ export interface CreateRecurringTransactionDto {
 export type UpdateRecurringTransactionDto = Partial<
   Omit<
     CreateRecurringTransactionDto,
-    "type" | "frequency" | "start_date" | "destination_account_id" | "destination_liability_id"
+    | "type"
+    | "frequency"
+    | "start_date"
+    | "destination_account_id"
+    | "destination_liability_id"
+    | "account_id"
+    | "liability_id"
+    | "end_date"
+    | "max_occurrences"
+    | "category_id"
+    | "subcategory_id"
   >
 > & {
-  // `null` desliga la cuenta/pasivo anterior al cambiar de uno al otro.
+  // `null` desliga cuenta/pasivo/categoría; `end_date` y `max_occurrences` en `null` dejan la regla sin fin.
+  category_id?: number | null;
+  subcategory_id?: number | null;
   account_id?: number | null;
   liability_id?: number | null;
+  end_date?: string | null;
+  max_occurrences?: number | null;
 };
 
 export interface RecurringProcessResult {

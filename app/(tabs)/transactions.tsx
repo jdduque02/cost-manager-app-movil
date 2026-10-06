@@ -18,6 +18,7 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
+import { router } from "expo-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/auth.store";
 import * as transactionsApi from "@/api/transactions.api";
@@ -67,7 +68,7 @@ import {
   CROSSFADE_DURATION,
   SPRING_SPRIG,
 } from "@/utils/animations";
-import { Plus, ReceiptText, Copy, Check, ArrowLeftRight, Trash } from "@/components/ui/icons";
+import { Plus, ReceiptText, Copy, Check, ArrowLeftRight, Trash, RefreshCw } from "@/components/ui/icons";
 import {
   TRANSACTION_TYPES,
   TYPE_LABELS,
@@ -252,6 +253,8 @@ const TransactionRow = memo(function TransactionRow({
 
 export default function TransactionsScreen() {
   const userId = useAuthStore((s) => s.userId);
+  // El invitado no tiene cuenta en el API: no ve Recurrentes (R8.5).
+  const isGuest = useAuthStore((s) => s.isGuest);
   const queryClient = useQueryClient();
   const isOnline = useOfflineStore((s) => s.isOnline);
   const {
@@ -665,7 +668,13 @@ export default function TransactionsScreen() {
         <PageHeader
           title="Transacciones"
           actions={
-            <View className="flex-row gap-2">
+            <View className="flex-row flex-wrap gap-2">
+              {!isGuest && (
+                <Button size="sm" variant="outline" onPress={() => router.push("/recurring")}>
+                  <RefreshCw size={16} color={PALETTE[resolvedScheme].foreground} />
+                  <Text className="text-sm font-sans-medium text-foreground">Recurrentes</Text>
+                </Button>
+              )}
               <Button size="sm" variant="outline" onPress={() => setShowTransferModal(true)}>
                 <ArrowLeftRight size={16} color={PALETTE[resolvedScheme].foreground} />
                 <Text className="text-sm font-sans-medium text-foreground">Transferir</Text>
