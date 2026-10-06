@@ -46,6 +46,10 @@ export interface TransactionRecordResponse {
   transaction_date: string;
   created_at: string;
   updated_at: string | null;
+  /** Recurrente que la generó (`null` si es manual). */
+  recurring_id?: number | null;
+  /** Generada por un recurrente `confirm` y pendiente de validar el pago. */
+  needs_validation?: boolean;
   /**
    * Solo presente en lecturas offline desde SQLite (src/database/local.repository.ts):
    * indica que el registro tiene cambios pendientes de sincronizar. Las respuestas

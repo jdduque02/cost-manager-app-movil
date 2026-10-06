@@ -18,9 +18,11 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
+import { router, useLocalSearchParams } from "expo-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/auth.store";
 import * as transactionsApi from "@/api/transactions.api";
+import { validateRecurringTransaction } from "@/api/recurring.api";
 import { apiErrorMessage } from "@/api/client";
 import * as catalogApi from "@/api/catalog.api";
 import * as objectivesApi from "@/api/objectives.api";
@@ -61,13 +63,15 @@ import { SegmentedControl, type SegmentedOption } from "@/components/ui/Segmente
 import { StaleDataBanner } from "@/components/StaleDataBanner";
 import { TransferModal } from "@/components/transactions/TransferModal";
 import { CloneTransactionModal } from "@/components/transactions/CloneTransactionModal";
+import { ValidatePaymentModal } from "@/components/transactions/ValidatePaymentModal";
+import { toast } from "@/utils/toast";
 import {
   useReducedMotion,
   EASE_IN_OUT_STRONG,
   CROSSFADE_DURATION,
   SPRING_SPRIG,
 } from "@/utils/animations";
-import { Plus, ReceiptText, Copy, Check, ArrowLeftRight, Trash } from "@/components/ui/icons";
+import { Plus, ReceiptText, Copy, Check, ArrowLeftRight, Trash, RefreshCw } from "@/components/ui/icons";
 import {
   TRANSACTION_TYPES,
   TYPE_LABELS,
@@ -263,6 +267,8 @@ const TransactionRow = memo(function TransactionRow({
 
 export default function TransactionsScreen() {
   const userId = useAuthStore((s) => s.userId);
+  // El invitado no tiene cuenta en el API: no ve Recurrentes (R8.5).
+  const isGuest = useAuthStore((s) => s.isGuest);
   const queryClient = useQueryClient();
   const isOnline = useOfflineStore((s) => s.isOnline);
   const {
@@ -294,13 +300,17 @@ export default function TransactionsScreen() {
   const [patrimonyTab, setPatrimonyTab] = useState<PatrimonyKind>("account");
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [cloneTarget, setCloneTarget] = useState<TransactionRecordResponse | null>(null);
+  const [validateTarget, setValidateTarget] = useState<TransactionRecordResponse | null>(null);
+  const [onlyPendingValidation, setOnlyPendingValidation] = useState(false);
+  // `?validate=<id>` llega desde la notificación "Valida el pago" (R8.2).
+  const { validate: validateParam } = useLocalSearchParams<{ validate?: string }>();
   const [form, setForm] = useState<Partial<CreateTransactionRecordDto>>({
     type: "expense",
     currency: "COP",
     transaction_date: todayBogota(),
   });
 
-  const { data, isLoading, refetch, isUsingFallback, isNetworkBlocked } = useOfflineQuery(
+  const { data, isLoading, isFetching, refetch, isUsingFallback, isNetworkBlocked } = useOfflineQuery(
     {
       // Sufijo "list" — ver comentario equivalente en app/(tabs)/index.tsx.
       queryKey: ["transactions", userId, "list"],
@@ -397,6 +407,9 @@ export default function TransactionsScreen() {
     if (typeFilter !== "ALL") {
       result = result.filter((tx) => tx.type === typeFilter);
     }
+    if (onlyPendingValidation) {
+      result = result.filter((tx) => tx.needs_validation === true);
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(
@@ -406,7 +419,7 @@ export default function TransactionsScreen() {
       );
     }
     return result;
-  }, [data, typeFilter, searchQuery]);
+  }, [data, typeFilter, onlyPendingValidation, searchQuery]);
 
   const calendarData = useMemo(
     () => groupByMonth(filteredTransactions),
@@ -578,6 +591,42 @@ export default function TransactionsScreen() {
     },
   });
 
+  // Validación pedida por la notificación: se deriva de la lista (local u
+  // online), sin navegar. Si no está, avisa y limpia el parámetro.
+  const paramTx = validateParam
+    ? data?.data.find((t) => String(t.id) === String(validateParam))
+    : undefined;
+  const activeValidation = validateTarget ?? (paramTx?.needs_validation ? paramTx : null);
+  useEffect(() => {
+    // Con la lista aún refrescando, la transacción nueva puede no haber llegado.
+    if (!validateParam || !data || isFetching || paramTx?.needs_validation) return;
+    toast.info("No encontramos ese pago por validar en tu lista");
+    router.setParams({ validate: undefined });
+  }, [validateParam, data, isFetching, paramTx]);
+
+  function closeValidation() {
+    setValidateTarget(null);
+    if (validateParam) router.setParams({ validate: undefined });
+  }
+
+  const validateMutation = useMutation({
+    mutationFn: (dto: { transaction_date: string; amount?: number }) =>
+      validateRecurringTransaction(userId as number, activeValidation!.id, dto),
+    onSuccess: async (updated) => {
+      // Best effort: el caché local deja de mostrar el badge sin esperar al refetch.
+      await localRepo.saveTransactions([updated]).catch(() => {});
+      queryClient.invalidateQueries({ queryKey: ["transactions", userId] });
+      queryClient.invalidateQueries({ queryKey: ["bank-accounts", userId] });
+      queryClient.invalidateQueries({ queryKey: ["financial-liabilities", userId] });
+      closeValidation();
+      toast.success("Pago validado");
+    },
+    onError: (err: unknown) => {
+      // 400 (fecha futura, saldo insuficiente) y 409 (ya validada): mensaje del API.
+      toast.error(apiErrorMessage(err, "No se pudo validar el pago"));
+    },
+  });
+
   function handleClonePress(tx: TransactionRecordResponse) {
     if (!isOnline) {
       Alert.alert("Sin conexión", "Duplicar una transacción requiere conexión a internet");
@@ -623,6 +672,16 @@ export default function TransactionsScreen() {
     return (
       <View className="flex-row items-center gap-2">
         {tx.is_pending_sync === true && <Badge tone="warning">Pendiente</Badge>}
+        {tx.needs_validation === true && (
+          <Pressable
+            onPress={() => setValidateTarget(tx)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Validar pago ${tx.description ?? tx.id}`}
+          >
+            <Badge tone="warning">Validar pago</Badge>
+          </Pressable>
+        )}
         <Text
           className={`text-sm font-num-semibold ${TYPE_AMOUNT_CLASS[tx.type]}`}
           style={{ fontVariant: ["tabular-nums"] }}
@@ -685,7 +744,13 @@ export default function TransactionsScreen() {
         <PageHeader
           title="Transacciones"
           actions={
-            <View className="flex-row gap-2">
+            <View className="flex-row flex-wrap gap-2">
+              {!isGuest && (
+                <Button size="sm" variant="outline" onPress={() => router.push("/recurring")}>
+                  <RefreshCw size={16} color={PALETTE[resolvedScheme].foreground} />
+                  <Text className="text-sm font-sans-medium text-foreground">Recurrentes</Text>
+                </Button>
+              )}
               <Button size="sm" variant="outline" onPress={() => setShowTransferModal(true)}>
                 <ArrowLeftRight size={16} color={PALETTE[resolvedScheme].foreground} />
                 <Text className="text-sm font-sans-medium text-foreground">Transferir</Text>
@@ -722,6 +787,13 @@ export default function TransactionsScreen() {
           size="sm"
           selected={typeFilter === "ALL"}
           onPress={() => setTypeFilter("ALL")}
+        />
+        <Chip
+          label="Por validar"
+          shape="pill"
+          size="sm"
+          selected={onlyPendingValidation}
+          onPress={() => setOnlyPendingValidation((v) => !v)}
         />
         {TRANSACTION_TYPES.map((t) => (
           <Chip
@@ -1459,6 +1531,15 @@ export default function TransactionsScreen() {
         liabilities={financialLiabilities ?? []}
         onClose={() => setShowTransferModal(false)}
         onCreated={() => queryClient.invalidateQueries({ queryKey: ["transactions", userId] })}
+      />
+
+      <ValidatePaymentModal
+        visible={!!activeValidation}
+        transaction={activeValidation}
+        isOnline={isOnline}
+        isPending={validateMutation.isPending}
+        onClose={closeValidation}
+        onConfirm={(dto) => validateMutation.mutate(dto)}
       />
 
       <CloneTransactionModal

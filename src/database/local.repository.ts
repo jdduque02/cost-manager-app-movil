@@ -37,6 +37,7 @@ import type {
   EmpresaResponse,
   CreateEmpresaDto,
 } from "@/types/empresa.types";
+import type { RecurringTransaction } from "@/types/recurring.types";
 
 // ─── Modo invitado (offline sin login) ───────────────────────────────────────
 //
@@ -174,6 +175,7 @@ export async function wipeLocalUserData(): Promise<void> {
     "financial_liabilities",
     "subcategories",
     "objective_payments",
+    "recurring_transactions",
     "pending_operations",
   ] as const;
 
@@ -638,8 +640,9 @@ export async function saveTransactions(
         `INSERT OR REPLACE INTO transactions
           (id, local_id, user_id, category_id, subcategory_id, account_id, asset_id, liability_id, objective_id, company_id,
            type, amount, currency, payment_method, is_fixed, fixed_type, frequency, due_day, reminder_days,
-           installments, installment_value, source_bank, source_account, description, transaction_date, created_at, updated_at, is_pending_sync)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+           installments, installment_value, source_bank, source_account, description, transaction_date, created_at, updated_at,
+           recurring_id, needs_validation, is_pending_sync)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
         [
           nz(t.id),
           String(t.id),
@@ -668,6 +671,8 @@ export async function saveTransactions(
           nz(t.transaction_date),
           nz(t.created_at),
           nz(t.updated_at),
+          nz(t.recurring_id),
+          t.needs_validation ? 1 : 0,
         ],
       );
     }
@@ -706,6 +711,8 @@ export async function getLocalTransactions(
     transaction_date: string;
     created_at: string;
     updated_at: string;
+    recurring_id: number | null;
+    needs_validation: number | null;
     is_pending_sync: number;
   }>(
     "SELECT * FROM transactions WHERE user_id = ? ORDER BY transaction_date DESC",
@@ -738,8 +745,44 @@ export async function getLocalTransactions(
     transaction_date: r.transaction_date,
     created_at: r.created_at,
     updated_at: r.updated_at,
+    recurring_id: r.recurring_id,
+    needs_validation: r.needs_validation === 1,
     is_pending_sync: r.is_pending_sync === 1,
   }));
+}
+
+// ─── Recurrentes (caché de solo lectura, R8.4) ───────────────────────────────
+
+/**
+ * Reemplaza el caché con la lista COMPLETA del servidor (`listRecurring` sin
+ * `status`): una lista filtrada borraría las demás. Sin cola: las escrituras
+ * de recurrentes requieren conexión (R8.5).
+ */
+export async function saveRecurringTransactions(
+  userId: number,
+  rules: RecurringTransaction[],
+): Promise<void> {
+  const db = await getDatabase();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("DELETE FROM recurring_transactions WHERE user_id = ?", [userId]);
+    for (const r of rules) {
+      await db.runAsync(
+        "INSERT OR REPLACE INTO recurring_transactions (id, user_id, payload) VALUES (?, ?, ?)",
+        [r.id, userId, JSON.stringify(r)],
+      );
+    }
+  });
+}
+
+export async function getLocalRecurringTransactions(
+  userId: number,
+): Promise<RecurringTransaction[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{ payload: string }>(
+    "SELECT payload FROM recurring_transactions WHERE user_id = ? ORDER BY id",
+    [userId],
+  );
+  return rows.map((r) => JSON.parse(r.payload) as RecurringTransaction);
 }
 
 export async function createLocalTransaction(
