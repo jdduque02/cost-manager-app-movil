@@ -1,13 +1,22 @@
 /**
  * Formatea un monto en pesos colombianos sin decimales (usado en toda la app);
- * con `"USD"`, en dólares con centavos. Nunca sumes montos de monedas distintas.
+ * con otra moneda (código ISO de 3 letras: USD, EUR…), con centavos.
+ * Nunca sumes montos de monedas distintas.
  */
-export function formatCurrency(amount: number, currency: "COP" | "USD" = "COP"): string {
+export function formatCurrency(amount: number, currency: string = "COP"): string {
   return new Intl.NumberFormat("es-CO", {
     style: "currency",
     currency,
     maximumFractionDigits: currency === "COP" ? 0 : 2,
   }).format(amount);
+}
+
+/** TRM (COP por 1 USD) con dos decimales y separadores es-CO, sin símbolo: "4.100,25". */
+export function formatRate(rate: number): string {
+  return new Intl.NumberFormat("es-CO", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(rate);
 }
 
 /**

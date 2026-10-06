@@ -11,10 +11,18 @@ import type {
   TransactionSummaryQuery,
 } from "@/types/transaction.types";
 
-function normalizeTransaction(
+const numOrNull = (v: unknown) => (v == null ? null : Number(v));
+
+/** Numeric de Postgres llega como string: `amount`, `applied_amount` y `fx_rate` a número. */
+export function normalizeTransaction(
   t: TransactionRecordResponse,
 ): TransactionRecordResponse {
-  return { ...t, amount: Number(t.amount ?? 0) };
+  return {
+    ...t,
+    amount: Number(t.amount ?? 0),
+    applied_amount: numOrNull(t.applied_amount),
+    fx_rate: numOrNull(t.fx_rate),
+  };
 }
 
 export async function getTransactions(
