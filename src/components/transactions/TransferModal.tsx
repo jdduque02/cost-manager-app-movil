@@ -7,8 +7,10 @@ import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import { Chip } from "@/components/ui/Chip";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
 import * as transfersApi from "@/api/transfers.api";
+import { apiErrorMessage } from "@/api/client";
 import type { BankAccountResponse, FinancialLiabilityResponse } from "@/types/banking.types";
 import type { CreateTransferDto } from "@/types/transfer.types";
+import { todayBogota, fxNotice } from "@/utils/transaction-form";
 
 type DestinationKind = "account" | "liability";
 
@@ -48,9 +50,17 @@ export function TransferModal({
   const [destinationLiabilityId, setDestinationLiabilityId] = useState<number | undefined>();
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(todayBogota());
 
   const destinationAccounts = bankAccounts.filter((a) => a.id !== sourceAccountId);
+  // El monto va en la moneda del origen; si el destino es la otra del par, el
+  // API convierte con la TRM de la fecha (R2.1, R7.3).
+  const sourceCurrency = bankAccounts.find((a) => a.id === sourceAccountId)?.currency;
+  const destinationCurrency =
+    destinationKind === "account"
+      ? bankAccounts.find((a) => a.id === destinationAccountId)?.currency
+      : liabilities.find((l) => l.id === destinationLiabilityId)?.currency;
+  const notice = fxNotice(sourceCurrency, destinationCurrency);
 
   /**
    * Cambiar la cuenta de origen a la que ya estaba elegida como destino debe
@@ -72,7 +82,7 @@ export function TransferModal({
     setDestinationLiabilityId(undefined);
     setAmount("");
     setDescription("");
-    setDate(new Date().toISOString().split("T")[0]);
+    setDate(todayBogota());
   }
 
   const createMutation = useMutation({
@@ -83,7 +93,10 @@ export function TransferModal({
       onClose();
     },
     onError: (err: unknown) => {
-      Alert.alert("Error", err instanceof Error ? err.message : "Error al crear la transferencia");
+      Alert.alert(
+        "Error",
+        apiErrorMessage(err, "Error al crear la transferencia"),
+      );
     },
   });
 
@@ -143,7 +156,7 @@ export function TransferModal({
                 bankAccounts.map((a) => (
                   <Chip
                     key={a.id}
-                    label={`${a.bank_name} ${a.masked_account_number}`}
+                    label={`${a.bank_name} ${a.masked_account_number} · ${a.currency}`}
                     selected={sourceAccountId === a.id}
                     onPress={() => handleSelectSource(a.id)}
                     className="mr-2"
@@ -165,7 +178,7 @@ export function TransferModal({
                 ? destinationAccounts.map((a) => (
                     <Chip
                       key={a.id}
-                      label={`${a.bank_name} ${a.masked_account_number}`}
+                      label={`${a.bank_name} ${a.masked_account_number} · ${a.currency}`}
                       selected={destinationAccountId === a.id}
                       onPress={() => setDestinationAccountId(a.id)}
                       className="mr-2"
@@ -174,7 +187,7 @@ export function TransferModal({
                 : liabilities.map((l) => (
                     <Chip
                       key={l.id}
-                      label={l.name}
+                      label={`${l.name} · ${l.currency}`}
                       selected={destinationLiabilityId === l.id}
                       onPress={() => setDestinationLiabilityId(l.id)}
                       className="mr-2"
@@ -183,7 +196,7 @@ export function TransferModal({
             </ScrollView>
 
             <CurrencyInput
-              label="Monto"
+              label={sourceCurrency ? `Monto (${sourceCurrency})` : "Monto"}
               value={amount}
               onChangeValue={setAmount}
               placeholder="0"
@@ -201,6 +214,10 @@ export function TransferModal({
               onChangeText={setDate}
               placeholder="2026-04-26"
             />
+
+            {notice && (
+              <Text className="text-xs font-sans text-muted-foreground mb-2">{notice}</Text>
+            )}
 
             <View className="flex-row gap-3 mt-2 mb-4">
               <Button

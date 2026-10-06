@@ -5,11 +5,16 @@
  * rebuildObjectivesTableIfLegacyCheckExists y migrateObjectivesTable pasándoles un
  * `db` fake, sin pasar por el singleton real.
  */
+import { DatabaseSync } from "node:sqlite";
 import {
+  closeDatabase,
+  getDatabase,
   rebuildObjectivesTableIfLegacyCheckExists,
   migrateObjectivesTable,
 } from "../database.service";
-import type * as SQLite from "expo-sqlite";
+import * as SQLite from "expo-sqlite";
+
+jest.mock("expo-sqlite", () => ({ openDatabaseAsync: jest.fn() }));
 
 type FakeDb = {
   getFirstAsync: jest.Mock;
@@ -139,5 +144,62 @@ describe("migrateObjectivesTable", () => {
     expect(fakeDb.execAsync).toHaveBeenCalledWith(
       "ALTER TABLE financial_objectives ADD COLUMN months_of_expenses_covered REAL",
     );
+  });
+});
+
+describe("migración de arranque contra SQLite real (recurrentes)", () => {
+  type Params = (string | number | null)[];
+  // Adaptador mínimo de `node:sqlite` a la API async de expo-sqlite.
+  function realDb(raw: DatabaseSync) {
+    return {
+      execAsync: async (sql: string) => void raw.exec(sql),
+      runAsync: async (sql: string, params: Params = []) => raw.prepare(sql).run(...params),
+      getAllAsync: async (sql: string, params: Params = []) => raw.prepare(sql).all(...params),
+      getFirstAsync: async (sql: string, params: Params = []) =>
+        raw.prepare(sql).get(...params) ?? null,
+      withTransactionAsync: async (task: () => Promise<void>) => {
+        raw.exec("BEGIN");
+        try {
+          await task();
+          raw.exec("COMMIT");
+        } catch (e) {
+          raw.exec("ROLLBACK");
+          throw e;
+        }
+      },
+      closeAsync: async () => {},
+    };
+  }
+
+  it("migrar dos veces no falla y conserva las filas", async () => {
+    const raw = new DatabaseSync(":memory:");
+    // Instalación previa: `transactions` sin las columnas de recurrentes.
+    raw.exec(`
+      CREATE TABLE transactions (
+        id INTEGER PRIMARY KEY, local_id TEXT UNIQUE, user_id INTEGER NOT NULL,
+        category_id INTEGER, subcategory_id INTEGER, account_id INTEGER,
+        type TEXT NOT NULL, amount REAL NOT NULL, currency TEXT NOT NULL DEFAULT 'COP',
+        is_fixed INTEGER DEFAULT 0, description TEXT, transaction_date TEXT NOT NULL,
+        created_at TEXT, updated_at TEXT, is_pending_sync INTEGER DEFAULT 0
+      );
+      INSERT INTO transactions (id, local_id, user_id, type, amount, transaction_date)
+        VALUES (5, '5', 7, 'expense', 1000, '2026-10-01');
+    `);
+    (SQLite.openDatabaseAsync as jest.Mock).mockResolvedValue(realDb(raw));
+
+    for (let i = 0; i < 2; i++) {
+      await closeDatabase();
+      await getDatabase();
+    }
+
+    const columns = (raw.prepare("PRAGMA table_info(transactions)").all() as { name: string }[])
+      .map((c) => c.name);
+    expect(columns).toEqual(expect.arrayContaining(["recurring_id", "needs_validation"]));
+    expect(raw.prepare("SELECT id, amount, recurring_id, needs_validation FROM transactions").all())
+      .toEqual([{ id: 5, amount: 1000, recurring_id: null, needs_validation: 0 }]);
+    expect(
+      raw.prepare("SELECT name FROM sqlite_master WHERE name = 'recurring_transactions'").get(),
+    ).toBeDefined();
+    await closeDatabase();
   });
 });

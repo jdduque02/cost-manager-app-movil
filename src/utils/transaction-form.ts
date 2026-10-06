@@ -4,7 +4,9 @@ import type {
   FixedFrequency,
   PatrimonyKind,
   CreateTransactionRecordDto,
+  TransactionRecordResponse,
 } from "@/types/transaction.types";
+import { formatCurrency, formatRate } from "@/utils/format";
 
 /** Opciones de método de pago, mismo set y orden que TransactionDialog.tsx en la web. */
 export const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] = [
@@ -63,6 +65,57 @@ export function setPatrimony<
   if (kind === "account") return { ...cleared, account_id: id };
   if (kind === "asset") return { ...cleared, asset_id: id };
   return { ...cleared, liability_id: id };
+}
+
+/**
+ * Hoy en America/Bogota (YYYY-MM-DD). `toISOString()` daba la fecha UTC: de
+ * 19:00 a 23:59 en Colombia ya era "mañana". Colombia es UTC-5 fijo (sin
+ * horario de verano), así que basta restar 5 h, sin depender del Intl de Hermes.
+ */
+export function todayBogota(now: Date = new Date()): string {
+  return new Date(now.getTime() - 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** Monedas que el API acepta en una transacción (DTO `IsIn(['COP','USD'])`). */
+export const TX_CURRENCIES = ["COP", "USD"] as const;
+
+/**
+ * R7.1: la transacción hereda la moneda del producto solo si el monto está
+ * vacío. Con un monto ya escrito la moneda se queda (y sale el aviso de R7.3):
+ * un cambio silencioso guardaría US$200.000 donde el usuario escribió $200.000.
+ */
+export function inheritCurrency<T extends { amount?: number; currency?: string }>(
+  form: T,
+  productCurrency?: string,
+): T {
+  // Un producto en otra moneda (EUR) no se hereda: el API la rechazaría con su mensaje (R1.5).
+  return form.amount || !TX_CURRENCIES.some((c) => c === productCurrency)
+    ? form
+    : { ...form, currency: productCurrency };
+}
+
+/**
+ * Aviso antes de guardar cuando habrá conversión con TRM (R7.3): solo para el
+ * par COP/USD (otra moneda distinta la rechaza el API con su mensaje). Sin
+ * cifra a propósito: la TRM es la de la fecha y la resuelve el servidor.
+ */
+export function fxNotice(txCurrency?: string, productCurrency?: string): string | null {
+  const pair = ["COP", "USD"];
+  if (!txCurrency || !productCurrency || txCurrency === productCurrency) return null;
+  if (!pair.includes(txCurrency) || !pair.includes(productCurrency)) return null;
+  return `Se registrará en ${productCurrency} con la TRM oficial de la fecha`;
+}
+
+/**
+ * Segunda línea de la fila cuando hubo conversión (R7.4): el convertido en la
+ * moneda del producto, que es la otra del par COP/USD (solo ese par convierte).
+ */
+export function convertedLine(
+  tx: Pick<TransactionRecordResponse, "currency" | "applied_amount" | "fx_rate">,
+): string | null {
+  if (tx.applied_amount == null || tx.fx_rate == null) return null;
+  const productCurrency = tx.currency === "USD" ? "COP" : "USD";
+  return `≈ ${formatCurrency(tx.applied_amount, productCurrency)} · TRM ${formatRate(tx.fx_rate)} (aprox.; tu banco puede usar otra tasa)`;
 }
 
 /** Ayuda de la pestaña "Pasivo": el API sube la deuda con gastos y la baja con ingresos/inversiones (R6.11). */

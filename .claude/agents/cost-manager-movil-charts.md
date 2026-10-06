@@ -38,6 +38,22 @@ Recharts, etc.).
 - **Datos crudos**: si el componente gráfico expone una prop de datos (p. ej. `data`), asume que viene
   del selector/hook correspondiente y no lo re-agregues tú.
 
+## Contraste de la paleta en ambos modos (regla dura)
+
+Un `--chart-N` tiene que contrastar **≥3:1 contra `--card` y `--background` en light y en dark**.
+`--card`, `--surface`, `--muted` y `--border` **nunca** son colores válidos para una serie: en dark son
+verdes profundos y un token que coincida con ellos borra la porción (pasó con `--chart-2` = `30 92 58`
+= `--card`, 2026-09-27).
+
+Al cambiar la paleta: `global.css` y `src/theme/palette.ts` van **siempre juntos** (el test
+`src/theme/__tests__/palette.parity.test.ts` los compara byte a byte), y el mismo juego de `--chart-N`
+está duplicado en `cost-manager-web/src/styles.css`, que ese test **no** cubre. Cambia los tres archivos
+y revisa la 3ra porción del donut en ambos clientes.
+
+Las porciones del donut llevan borde separador de 1 px con `colors.cardBorder` (`strokeWidth={1}` +
+`strokeColor`): no uses `colors.card` como color de borde, que es justo el color del fondo. El borde
+separa vecinos; no sustituye el contraste del token.
+
 ## Consistencia con la versión web
 
 `src/utils/chart-data.ts` (`groupByMonth`, `topCategorySpending`) replica la lógica de
