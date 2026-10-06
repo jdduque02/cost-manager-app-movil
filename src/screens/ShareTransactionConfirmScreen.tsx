@@ -12,6 +12,7 @@ import { useOfflineMutations } from "@/hooks/useOfflineMutations";
 import type { CategoryResponse } from "@/types/catalog.types";
 import type { CreateTransactionRecordDto } from "@/types/transaction.types";
 import { parseBankMessage } from "@/utils/bank-message-parser";
+import { todayBogota, TX_CURRENCIES, fxNotice, inheritCurrency } from "@/utils/transaction-form";
 import {
   TRANSACTION_TYPES,
   TYPE_LABELS,
@@ -60,10 +61,9 @@ export default function ShareTransactionConfirmScreen({
   const [categorySearch, setCategorySearch] = useState("");
   const [form, setForm] = useState<Partial<CreateTransactionRecordDto>>({
     type: parsed.type ?? "expense",
-    currency: "COP",
     amount: parsed.amount ?? undefined,
     description: parsed.counterparty ?? undefined,
-    transaction_date: parsed.date ?? new Date().toISOString().split("T")[0],
+    transaction_date: parsed.date ?? todayBogota(),
   });
 
   const { data: categories } = useOfflineQuery(
@@ -86,14 +86,22 @@ export default function ShareTransactionConfirmScreen({
   // Cuenta bancaria inferida por coincidencia de nombre de banco — solo si
   // hay una única cuenta que matchea, para no adivinar entre varias del
   // mismo banco (ej. dos cuentas Bancolombia).
-  const inferredAccountId = useMemo(() => {
+  const inferredAccount = useMemo(() => {
     if (parsed.bank === "unknown" || !bankAccounts?.length) return undefined;
     const bankLabel = BANK_LABELS[parsed.bank].toLowerCase();
     const matches = bankAccounts.filter((acc) =>
       acc.bank_name.toLowerCase().includes(bankLabel),
     );
-    return matches.length === 1 ? matches[0].id : undefined;
+    return matches.length === 1 ? matches[0] : undefined;
   }, [parsed.bank, bankAccounts]);
+  const inferredAccountId = inferredAccount?.id;
+  // R7.1: con el monto vacío la moneda se deriva de la cuenta inferida (que
+  // carga después del primer render); el mensaje compartido casi siempre trae
+  // monto, y entonces la moneda no cambia sola. Al escribir el monto queda fija.
+  const currency =
+    form.currency ??
+    inheritCurrency({ amount: form.amount, currency: "COP" }, inferredAccount?.currency).currency;
+  const notice = fxNotice(currency, inferredAccount?.currency);
 
   const filteredCategories = useMemo(() => {
     const list = categories ?? [];
@@ -126,6 +134,7 @@ export default function ShareTransactionConfirmScreen({
     }
     const dto: CreateTransactionRecordDto = {
       ...form,
+      currency,
       account_id: form.account_id ?? inferredAccountId,
     } as CreateTransactionRecordDto;
     createMutation.mutate(dto);
@@ -195,10 +204,27 @@ export default function ShareTransactionConfirmScreen({
           label="Monto"
           value={form.amount != null ? String(form.amount) : ""}
           onChangeValue={(raw) =>
-            setForm((p) => ({ ...p, amount: raw ? parseFloat(raw) : undefined }))
+            setForm((p) => ({
+              ...p,
+              amount: raw ? parseFloat(raw) : undefined,
+              currency: p.currency ?? currency,
+            }))
           }
           placeholder="0"
         />
+
+        <Text className="text-sm font-sans-medium text-foreground mb-1.5">Moneda</Text>
+        <View className="flex-row gap-2 mb-4">
+          {TX_CURRENCIES.map((cur) => (
+            <Chip
+              key={cur}
+              label={cur}
+              size="sm"
+              selected={currency === cur}
+              onPress={() => setForm((p) => ({ ...p, currency: cur }))}
+            />
+          ))}
+        </View>
 
         <Text className="text-sm font-sans-medium text-foreground mb-1.5">Categoría</Text>
         <Input
@@ -239,11 +265,15 @@ export default function ShareTransactionConfirmScreen({
           placeholder="2026-04-26"
         />
 
-        {inferredAccountId && (
+        {inferredAccount && (
           <Text className="text-xs font-sans text-muted-foreground mb-4">
             Se asociará automáticamente a tu cuenta de{" "}
-            {BANK_LABELS[parsed.bank]}.
+            {BANK_LABELS[parsed.bank]} ({inferredAccount.currency}).
           </Text>
+        )}
+
+        {notice && (
+          <Text className="text-xs font-sans text-muted-foreground mb-4">{notice}</Text>
         )}
 
         <View className="flex-row gap-3 mt-2">

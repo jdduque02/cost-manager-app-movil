@@ -86,6 +86,11 @@ import {
   setPatrimony,
   validateFixedAndInstallments,
   LIABILITY_LINK_HINT,
+  todayBogota,
+  TX_CURRENCIES,
+  fxNotice,
+  inheritCurrency,
+  convertedLine,
 } from "@/utils/transaction-form";
 
 const PATRIMONY_OPTIONS: SegmentedOption<PatrimonyKind>[] = [
@@ -181,6 +186,7 @@ const TransactionRow = memo(function TransactionRow({
   const c = PALETTE[resolvedScheme];
   const reduceMotion = useReducedMotion();
   const translateX = useSharedValue(0);
+  const converted = convertedLine(item);
 
   function triggerDelete() {
     onDelete(item.id);
@@ -242,6 +248,11 @@ const TransactionRow = memo(function TransactionRow({
                 meta={new Date(item.transaction_date).toLocaleDateString("es-CO")}
                 right={right}
               />
+              {converted && (
+                <Text className="text-xs font-sans text-muted-foreground pl-14 pr-2 pb-1">
+                  {converted}
+                </Text>
+              )}
             </Card>
           </Animated.View>
         </GestureDetector>
@@ -286,7 +297,7 @@ export default function TransactionsScreen() {
   const [form, setForm] = useState<Partial<CreateTransactionRecordDto>>({
     type: "expense",
     currency: "COP",
-    transaction_date: new Date().toISOString().split("T")[0],
+    transaction_date: todayBogota(),
   });
 
   const { data, isLoading, refetch, isUsingFallback, isNetworkBlocked } = useOfflineQuery(
@@ -371,6 +382,15 @@ export default function TransactionsScreen() {
     () => localRepo.getLocalFinancialLiabilities(userId as number),
   );
 
+  // Moneda del producto ligado: se hereda al elegirlo con el monto vacío (R7.1).
+  const productCurrency =
+    (form.account_id && bankAccounts?.find((a) => a.id === form.account_id)?.currency) ||
+    (form.asset_id && financialAssets?.find((a) => a.id === form.asset_id)?.currency) ||
+    (form.liability_id &&
+      financialLiabilities?.find((l) => l.id === form.liability_id)?.currency) ||
+    undefined;
+  const createFxNotice = fxNotice(form.currency, productCurrency);
+
   const filteredTransactions = useMemo(() => {
     const list = data?.data ?? [];
     let result = list;
@@ -418,7 +438,7 @@ export default function TransactionsScreen() {
       setForm({
         type: "expense",
         currency: "COP",
-        transaction_date: new Date().toISOString().split("T")[0],
+        transaction_date: todayBogota(),
       });
     },
     onError: (err: unknown) => {
@@ -608,7 +628,7 @@ export default function TransactionsScreen() {
           style={{ fontVariant: ["tabular-nums"] }}
         >
           {tx.type === "income" ? "+" : "-"}
-          {formatCurrency(Number(tx.amount))}
+          {formatCurrency(Number(tx.amount), tx.currency)}
         </Text>
         <Pressable onPress={() => handleClonePress(tx)} hitSlop={8} accessibilityLabel="Duplicar transacción">
           <Copy size={16} color={PALETTE[resolvedScheme].mutedForeground} />
@@ -809,6 +829,19 @@ export default function TransactionsScreen() {
                 }
                 placeholder="0"
               />
+
+              <Text className="text-sm font-sans-medium text-foreground mb-1.5">Moneda</Text>
+              <View className="flex-row gap-2 mb-4">
+                {TX_CURRENCIES.map((cur) => (
+                  <Chip
+                    key={cur}
+                    label={cur}
+                    size="sm"
+                    selected={form.currency === cur}
+                    onPress={() => setForm((p) => ({ ...p, currency: cur }))}
+                  />
+                ))}
+              </View>
 
               <View className="flex-row items-center justify-between mb-1.5">
                 <Text className="text-sm font-sans-medium text-foreground">Categoría</Text>
@@ -1147,13 +1180,13 @@ export default function TransactionsScreen() {
                     (bankAccounts ?? []).map((a) => (
                       <Chip
                         key={a.id}
-                        label={`${a.bank_name} ${a.masked_account_number}`}
+                        label={`${a.bank_name} ${a.masked_account_number} · ${a.currency}`}
                         selected={form.account_id === a.id}
                         onPress={() =>
                           setForm((p) =>
                             patrimonyKindOf(p) === "account" && p.account_id === a.id
                               ? clearPatrimonyFields(p)
-                              : setPatrimony(p, "account", a.id),
+                              : inheritCurrency(setPatrimony(p, "account", a.id), a.currency),
                           )
                         }
                         className="mr-2"
@@ -1169,13 +1202,13 @@ export default function TransactionsScreen() {
                     (financialAssets ?? []).map((a) => (
                       <Chip
                         key={a.id}
-                        label={a.name}
+                        label={`${a.name} · ${a.currency}`}
                         selected={form.asset_id === a.id}
                         onPress={() =>
                           setForm((p) =>
                             patrimonyKindOf(p) === "asset" && p.asset_id === a.id
                               ? clearPatrimonyFields(p)
-                              : setPatrimony(p, "asset", a.id),
+                              : inheritCurrency(setPatrimony(p, "asset", a.id), a.currency),
                           )
                         }
                         className="mr-2"
@@ -1191,13 +1224,13 @@ export default function TransactionsScreen() {
                     (financialLiabilities ?? []).map((l) => (
                       <Chip
                         key={l.id}
-                        label={l.name}
+                        label={`${l.name} · ${l.currency}`}
                         selected={form.liability_id === l.id}
                         onPress={() =>
                           setForm((p) =>
                             patrimonyKindOf(p) === "liability" && p.liability_id === l.id
                               ? clearPatrimonyFields(p)
-                              : setPatrimony(p, "liability", l.id),
+                              : inheritCurrency(setPatrimony(p, "liability", l.id), l.currency),
                           )
                         }
                         className="mr-2"
@@ -1205,6 +1238,12 @@ export default function TransactionsScreen() {
                     ))
                   ))}
               </ScrollView>
+
+              {createFxNotice && (
+                <Text className="text-xs font-sans text-muted-foreground mb-2">
+                  {createFxNotice}
+                </Text>
+              )}
 
               <View className="flex-row gap-3 mt-2 mb-4">
                 <Button
