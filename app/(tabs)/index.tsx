@@ -21,6 +21,8 @@ import { ListRow } from "@/components/ui/ListRow";
 import { StaleDataBanner } from "@/components/StaleDataBanner";
 import { TrendAreaChart } from "@/components/charts/TrendAreaChart";
 import { groupByMonth, txDate } from "@/utils/chart-data";
+import { consolidate } from "@/utils/net-worth";
+import { formatCurrency } from "@/utils/format";
 import {
   Wallet,
   TrendingUp,
@@ -101,18 +103,29 @@ export default function DashboardScreen() {
     () => localRepo.getLocalBankAccounts(userId as number),
   );
 
-  const isLoading = loadingTx || loadingAcc;
+  // Sin conexión, la última TRM guardada (R6.5); si nunca hubo, null y solo el desglose (R6.4).
+  const { data: trm, isLoading: loadingTrm } = useOfflineQuery<bankingApi.Trm | null>(
+    { queryKey: ["trm"], queryFn: bankingApi.getTrm, staleTime: 60 * 60 * 1000 },
+    bankingApi.getCachedTrm,
+  );
+
+  const isLoading = loadingTx || loadingAcc || loadingTrm;
   const isUsingFallback = txUsingFallback || accUsingFallback;
   const transactions = useMemo(() => txData?.data ?? [], [txData]);
+  // Ingresos, gastos y la gráfica del mes solo en COP: sumar USD como pesos los inflaba (R6.7).
+  const copTransactions = useMemo(
+    () => transactions.filter((t) => (t.currency || "COP") === "COP"),
+    [transactions],
+  );
 
   const now = useMemo(() => new Date(), []);
   const currentMonthTx = useMemo(
     () =>
-      transactions.filter((t) => {
+      copTransactions.filter((t) => {
         const d = txDate(t);
         return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
       }),
-    [transactions, now],
+    [copTransactions, now],
   );
 
   const { income, expenses } = useMemo(() => {
@@ -125,9 +138,13 @@ export default function DashboardScreen() {
     return { income: inc, expenses: exp };
   }, [currentMonthTx]);
 
-  const totalBalance = (accounts ?? []).reduce((s, a) => s + Number(a.display_balance), 0);
+  // Saldo de las cuentas consolidado en COP (R6.1–R6.3).
+  const balance = consolidate(
+    (accounts ?? []).map((a): [string, number] => [a.currency, Number(a.display_balance)]),
+    trm,
+  );
 
-  const monthlyPoints = useMemo(() => groupByMonth(transactions, 6), [transactions]);
+  const monthlyPoints = useMemo(() => groupByMonth(copTransactions, 6), [copTransactions]);
 
   const recentTransactions = transactions.slice(0, 5);
 
@@ -187,7 +204,15 @@ export default function DashboardScreen() {
         <RevealSection delay={0}>
           <View className="flex-row flex-wrap gap-4">
             <View className="flex-1 min-w-[45%]">
-              <StatCard icon={Wallet} label="Balance total" value={totalBalance} tone="primary" />
+              <StatCard
+                icon={Wallet}
+                label="Balance total"
+                value={balance.total ?? balance.breakdown}
+                tone="primary"
+              />
+              {balance.note && (
+                <Text className="text-xs font-sans text-muted-foreground mt-1">{balance.note}</Text>
+              )}
             </View>
             <View className="flex-1 min-w-[45%]">
               <StatCard icon={TrendingUp} label="Ingresos del mes" value={income} tone="success" />
@@ -256,9 +281,16 @@ export default function DashboardScreen() {
                     tone={TYPE_TONE[tx.type] ?? "muted"}
                     title={tx.description ?? `Transacción #${tx.id}`}
                     meta={txDate(tx).toLocaleDateString("es-CO")}
-                    amount={Number(tx.amount)}
-                    amountPrefix={tx.type === "income" ? "+" : "-"}
-                    amountClassName={tx.type === "income" ? "text-success" : "text-foreground"}
+                    // `amount` de ListRow formatea en COP; cada movimiento va en su moneda (R7.5).
+                    right={
+                      <Text
+                        className={`text-sm font-num-semibold ${tx.type === "income" ? "text-success" : "text-foreground"}`}
+                        style={{ fontVariant: ["tabular-nums"] }}
+                      >
+                        {tx.type === "income" ? "+" : "-"}
+                        {formatCurrency(Number(tx.amount), tx.currency)}
+                      </Text>
+                    }
                   />
                 ))}
               </Card>

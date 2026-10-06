@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiClient, isListPayload, unwrapList } from "./client";
 import * as localRepo from "@/database/local.repository";
 import type {
@@ -8,8 +9,45 @@ import type {
   FinancialLiabilityResponse,
 } from "@/types/banking.types";
 
+/** GET /currency/trm: TRM oficial (COP por 1 USD) y su rango de vigencia (YYYY-MM-DD). */
+export interface Trm {
+  value: number;
+  valid_from: string;
+  valid_to: string;
+  source: string;
+}
+
 function one<T>(data: T | T[]): T {
   return Array.isArray(data) ? data[0] : data;
+}
+
+// --- TRM (COP por 1 USD) ---
+// Dato público, no sensible: AsyncStorage basta. Se guarda la última para
+// consolidar el patrimonio sin conexión (R6.5).
+const TRM_STORAGE_KEY = "sprig.trm.last";
+
+const isValidTrm = (t: Partial<Trm> | null | undefined): t is Trm =>
+  !!t && Number.isFinite(t.value) && (t.value as number) > 0 && typeof t.valid_from === "string";
+
+/** TRM vigente hoy (Bogotá) desde el API; la guarda como última conocida. */
+export async function getTrm(): Promise<Trm> {
+  const { data } = await apiClient.get<Trm | Trm[]>("/currency/trm");
+  const raw = one(data);
+  const trm = { ...raw, value: Number(raw?.value) };
+  if (!isValidTrm(trm)) throw new Error("TRM inválida");
+  await AsyncStorage.setItem(TRM_STORAGE_KEY, JSON.stringify(trm)).catch(() => {});
+  return trm;
+}
+
+/** Última TRM obtenida con conexión, o null si nunca se obtuvo (R6.4). */
+export async function getCachedTrm(): Promise<Trm | null> {
+  try {
+    const raw = await AsyncStorage.getItem(TRM_STORAGE_KEY);
+    const trm = raw ? (JSON.parse(raw) as Trm) : null;
+    return isValidTrm(trm) ? trm : null;
+  } catch {
+    return null;
+  }
 }
 
 // --- Bank Accounts ---

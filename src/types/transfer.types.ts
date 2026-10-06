@@ -22,7 +22,11 @@ export interface TransferMovement {
   account_id: number | null;
   liability_id: number | null;
   side: "source" | "destination";
+  /** El monto de la transferencia va en la moneda del origen; la pierna destino trae el convertido. */
   amount: number;
+  currency: string;
+  applied_amount: number | null;
+  fx_rate: number | null;
   transaction_date: string;
   description: string | null;
   created_at: string;

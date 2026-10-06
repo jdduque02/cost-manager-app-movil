@@ -71,6 +71,17 @@ export function useOfflineMutations() {
   const sessionUserId = useAuthStore((s) => s.userId);
   const queryClient = useQueryClient();
 
+  // Al categorizar a mano un movimiento con empresa, el servidor llena
+  // `empresa.default_category_id`: refrescar empresas tras un create/update
+  // que llegó al servidor. En la ruta offline no aplica (lo aplica el sync).
+  const invalidateCompanies = useCallback(
+    (userId: number) => {
+      queryClient.invalidateQueries({ queryKey: ["companies", userId] });
+      queryClient.invalidateQueries({ queryKey: ["empresas", userId] });
+    },
+    [queryClient],
+  );
+
   const createTransaction = useCallback(
     async (
       dto: CreateTransactionRecordDto,
@@ -82,6 +93,7 @@ export function useOfflineMutations() {
           // Guardar en local también para caché
           await localRepo.saveTransactions([result]);
           queryClient.invalidateQueries({ queryKey: ["transactions", userId] });
+          invalidateCompanies(userId);
           return result;
         } catch (err) {
           rethrowUnlessQueueable(err);
@@ -93,7 +105,7 @@ export function useOfflineMutations() {
       queryClient.invalidateQueries({ queryKey: ["transactions", userId] });
       return result;
     },
-    [isOnline, sessionUserId, queryClient, refreshPendingCount],
+    [isOnline, sessionUserId, queryClient, refreshPendingCount, invalidateCompanies],
   );
 
   const createBankAccount = useCallback(
@@ -175,6 +187,7 @@ export function useOfflineMutations() {
           const result = await transactionsApi.updateTransaction(userId, id, dto);
           await localRepo.saveTransactions([result]);
           queryClient.invalidateQueries({ queryKey: ["transactions", userId] });
+          invalidateCompanies(userId);
           return;
         } catch (err) {
           rethrowUnlessQueueable(err);
@@ -184,7 +197,7 @@ export function useOfflineMutations() {
       await refreshPendingCount();
       queryClient.invalidateQueries({ queryKey: ["transactions", userId] });
     },
-    [isOnline, sessionUserId, queryClient, refreshPendingCount],
+    [isOnline, sessionUserId, queryClient, refreshPendingCount, invalidateCompanies],
   );
 
   const deleteTransaction = useCallback(

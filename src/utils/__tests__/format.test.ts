@@ -12,6 +12,18 @@ describe("formatDateTime", () => {
     expect(formatDateTime(null)).toBe("—");
     expect(formatDateTime("no-es-fecha")).toBe("—");
   });
+
+  it("usa 24 h sin el marcador 'a. m.' (que sale con espacio interno)", () => {
+    // No se fija la hora exacta: el render depende del timezone del runner.
+    const salida = formatDateTime(String(Date.UTC(2026, 8, 25, 15, 30)));
+    expect(salida).not.toMatch(/[ap]\.\s?m\./i);
+    expect(salida).toMatch(/\d{2}:\d{2}$/);
+  });
+
+  it("solo dígitos se leen como epoch; exponentes y hex no son fechas", () => {
+    expect(formatDateTime("1e12")).toBe("—");
+    expect(formatDateTime("0x10")).toBe("—");
+  });
 });
 
 describe("formatEventDetails", () => {
