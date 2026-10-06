@@ -32,6 +32,7 @@ import { Chip } from "@/components/ui/Chip";
 import { StaleDataBanner } from "@/components/StaleDataBanner";
 import { Wallet, CreditCard, Banknote, Plus } from "@/components/ui/icons";
 import { toast } from "@/utils/toast";
+import { consolidate } from "@/utils/net-worth";
 import type {
   CreateBankAccountDto,
   AccountType,
@@ -137,18 +138,23 @@ export default function BankingScreen() {
     () => localRepo.getLocalFinancialLiabilities(userId as number),
   );
 
-  const isLoading = loadingAccounts || loadingAssets || loadingLiabilities;
+  // Sin conexión, la última TRM guardada (R6.5); si nunca hubo, null y solo el desglose (R6.4).
+  const { data: trm, isLoading: loadingTrm } = useOfflineQuery<bankingApi.Trm | null>(
+    { queryKey: ["trm"], queryFn: bankingApi.getTrm, staleTime: 60 * 60 * 1000 },
+    bankingApi.getCachedTrm,
+  );
 
-  const totalAccounts = (accounts ?? []).reduce(
-    (s, a) => s + Number(a.display_balance),
-    0,
+  const isLoading = loadingAccounts || loadingAssets || loadingLiabilities || loadingTrm;
+
+  // Patrimonio consolidado en COP: COP + USD×TRM, otras monedas solo en el desglose (R6.1–R6.3).
+  const netWorth = consolidate(
+    [
+      ...(accounts ?? []).map((a): [string, number] => [a.currency, Number(a.display_balance)]),
+      ...(assets ?? []).map((a): [string, number] => [a.currency, Number(a.current_value)]),
+      ...(liabilities ?? []).map((l): [string, number] => [l.currency, -Number(l.current_balance)]),
+    ],
+    trm,
   );
-  const totalAssets = (assets ?? []).reduce((s, a) => s + Number(a.current_value), 0);
-  const totalLiabilities = (liabilities ?? []).reduce(
-    (s, l) => s + Number(l.current_balance),
-    0,
-  );
-  const netWorth = totalAccounts + totalAssets - totalLiabilities;
 
   const refetchAll = useCallback(() => {
     refetchAccounts();
@@ -245,7 +251,16 @@ export default function BankingScreen() {
               <Text className="text-xs font-sans-medium uppercase tracking-widest text-muted-foreground mb-1">
                 Patrimonio neto
               </Text>
-              <Money value={netWorth} className="text-3xl text-foreground" />
+              {netWorth.total != null ? (
+                <Money value={netWorth.total} className="text-3xl text-foreground" />
+              ) : (
+                <Text className="text-xl font-num-semibold text-foreground">
+                  {netWorth.breakdown}
+                </Text>
+              )}
+              {netWorth.note && (
+                <Text className="text-xs font-sans text-muted-foreground mt-1">{netWorth.note}</Text>
+              )}
               <View className="flex-row flex-wrap gap-2 mt-3">
                 <Badge tone="success">{`${accounts?.length ?? 0} cuentas`}</Badge>
                 <Badge tone="primary">{`${assets?.length ?? 0} activos`}</Badge>

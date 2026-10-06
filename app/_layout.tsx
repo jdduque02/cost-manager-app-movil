@@ -27,6 +27,8 @@ import { useOfflineStore, startPeriodicSync, stopPeriodicSync } from "@/store/of
 import { getDatabase } from "@/database/database.service";
 import { ThemeProvider, useAppTheme } from "@/components/ThemeProvider";
 import { AppToast } from "@/components/ui/Toast";
+import { useStatementImportsWatcher } from "@/hooks/useStatementImports";
+import { useRecurringProcess } from "@/hooks/useRecurringProcess";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -38,6 +40,9 @@ function RootLayoutInner() {
   const wasAuthenticated = useRef(isAuthenticated);
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntentContext();
   const rootNavigationState = useRootNavigationState();
+  useStatementImportsWatcher();
+  // Solo dispara el procesamiento de recurrentes; no navega, no necesita el guard de router.
+  useRecurringProcess();
 
   // Redirige a login cuando la sesión pasa de autenticada a no-autenticada
   // (expiración irrecuperable o logout), no en el montaje inicial.
@@ -141,6 +146,7 @@ function RootLayoutInner() {
         <Stack.Screen name="sessions" />
         <Stack.Screen name="access-history" />
         <Stack.Screen name="statement-import" />
+        <Stack.Screen name="recurring" />
         <Stack.Screen name="notifications" />
         <Stack.Screen name="reports" />
         <Stack.Screen name="intelligence" />

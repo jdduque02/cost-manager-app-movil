@@ -3,7 +3,8 @@
  * interceptor deja el arreglo — leer `.totals` sobre él dejaba Reportes e
  * Inteligencia en $0.
  */
-import { getTransactionSummary } from "../transactions.api";
+import { getTransactionSummary, normalizeTransaction } from "../transactions.api";
+import type { TransactionRecordResponse } from "@/types/transaction.types";
 import { apiClient } from "../client";
 
 jest.mock("../client", () => ({
@@ -56,5 +57,25 @@ describe("getTransactionSummary", () => {
 
     await getTransactionSummary(9, { ...query, currency: "USD" });
     expect(mockGet.mock.calls[1][1].params.currency).toBe("USD");
+  });
+});
+
+describe("normalizeTransaction", () => {
+  const base = { id: 1, amount: "400000.00", currency: "COP" } as unknown as TransactionRecordResponse;
+
+  it("convierte applied_amount y fx_rate (string de numeric) a número", () => {
+    const t = normalizeTransaction({
+      ...base,
+      applied_amount: "97.56",
+      fx_rate: "4100.2500",
+    } as unknown as TransactionRecordResponse);
+    expect(t).toMatchObject({ amount: 400000, applied_amount: 97.56, fx_rate: 4100.25 });
+  });
+
+  it("sin conversión deja applied_amount y fx_rate en null", () => {
+    expect(normalizeTransaction({ ...base, applied_amount: null })).toMatchObject({
+      applied_amount: null,
+      fx_rate: null,
+    });
   });
 });

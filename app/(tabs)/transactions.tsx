@@ -18,9 +18,12 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
+import { router, useLocalSearchParams } from "expo-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/auth.store";
 import * as transactionsApi from "@/api/transactions.api";
+import { validateRecurringTransaction } from "@/api/recurring.api";
+import { apiErrorMessage } from "@/api/client";
 import * as catalogApi from "@/api/catalog.api";
 import * as objectivesApi from "@/api/objectives.api";
 import * as empresasApi from "@/api/empresas.api";
@@ -60,13 +63,15 @@ import { SegmentedControl, type SegmentedOption } from "@/components/ui/Segmente
 import { StaleDataBanner } from "@/components/StaleDataBanner";
 import { TransferModal } from "@/components/transactions/TransferModal";
 import { CloneTransactionModal } from "@/components/transactions/CloneTransactionModal";
+import { ValidatePaymentModal } from "@/components/transactions/ValidatePaymentModal";
+import { toast } from "@/utils/toast";
 import {
   useReducedMotion,
   EASE_IN_OUT_STRONG,
   CROSSFADE_DURATION,
   SPRING_SPRIG,
 } from "@/utils/animations";
-import { Plus, ReceiptText, Copy, Check, ArrowLeftRight, Trash } from "@/components/ui/icons";
+import { Plus, ReceiptText, Copy, Check, ArrowLeftRight, Trash, RefreshCw } from "@/components/ui/icons";
 import {
   TRANSACTION_TYPES,
   TYPE_LABELS,
@@ -85,6 +90,11 @@ import {
   setPatrimony,
   validateFixedAndInstallments,
   LIABILITY_LINK_HINT,
+  todayBogota,
+  TX_CURRENCIES,
+  fxNotice,
+  inheritCurrency,
+  convertedLine,
 } from "@/utils/transaction-form";
 
 const PATRIMONY_OPTIONS: SegmentedOption<PatrimonyKind>[] = [
@@ -180,6 +190,7 @@ const TransactionRow = memo(function TransactionRow({
   const c = PALETTE[resolvedScheme];
   const reduceMotion = useReducedMotion();
   const translateX = useSharedValue(0);
+  const converted = convertedLine(item);
 
   function triggerDelete() {
     onDelete(item.id);
@@ -241,6 +252,11 @@ const TransactionRow = memo(function TransactionRow({
                 meta={new Date(item.transaction_date).toLocaleDateString("es-CO")}
                 right={right}
               />
+              {converted && (
+                <Text className="text-xs font-sans text-muted-foreground pl-14 pr-2 pb-1">
+                  {converted}
+                </Text>
+              )}
             </Card>
           </Animated.View>
         </GestureDetector>
@@ -251,6 +267,8 @@ const TransactionRow = memo(function TransactionRow({
 
 export default function TransactionsScreen() {
   const userId = useAuthStore((s) => s.userId);
+  // El invitado no tiene cuenta en el API: no ve Recurrentes (R8.5).
+  const isGuest = useAuthStore((s) => s.isGuest);
   const queryClient = useQueryClient();
   const isOnline = useOfflineStore((s) => s.isOnline);
   const {
@@ -282,13 +300,17 @@ export default function TransactionsScreen() {
   const [patrimonyTab, setPatrimonyTab] = useState<PatrimonyKind>("account");
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [cloneTarget, setCloneTarget] = useState<TransactionRecordResponse | null>(null);
+  const [validateTarget, setValidateTarget] = useState<TransactionRecordResponse | null>(null);
+  const [onlyPendingValidation, setOnlyPendingValidation] = useState(false);
+  // `?validate=<id>` llega desde la notificación "Valida el pago" (R8.2).
+  const { validate: validateParam } = useLocalSearchParams<{ validate?: string }>();
   const [form, setForm] = useState<Partial<CreateTransactionRecordDto>>({
     type: "expense",
     currency: "COP",
-    transaction_date: new Date().toISOString().split("T")[0],
+    transaction_date: todayBogota(),
   });
 
-  const { data, isLoading, refetch, isUsingFallback, isNetworkBlocked } = useOfflineQuery(
+  const { data, isLoading, isFetching, refetch, isUsingFallback, isNetworkBlocked } = useOfflineQuery(
     {
       // Sufijo "list" — ver comentario equivalente en app/(tabs)/index.tsx.
       queryKey: ["transactions", userId, "list"],
@@ -370,11 +392,23 @@ export default function TransactionsScreen() {
     () => localRepo.getLocalFinancialLiabilities(userId as number),
   );
 
+  // Moneda del producto ligado: se hereda al elegirlo con el monto vacío (R7.1).
+  const productCurrency =
+    (form.account_id && bankAccounts?.find((a) => a.id === form.account_id)?.currency) ||
+    (form.asset_id && financialAssets?.find((a) => a.id === form.asset_id)?.currency) ||
+    (form.liability_id &&
+      financialLiabilities?.find((l) => l.id === form.liability_id)?.currency) ||
+    undefined;
+  const createFxNotice = fxNotice(form.currency, productCurrency);
+
   const filteredTransactions = useMemo(() => {
     const list = data?.data ?? [];
     let result = list;
     if (typeFilter !== "ALL") {
       result = result.filter((tx) => tx.type === typeFilter);
+    }
+    if (onlyPendingValidation) {
+      result = result.filter((tx) => tx.needs_validation === true);
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -385,7 +419,7 @@ export default function TransactionsScreen() {
       );
     }
     return result;
-  }, [data, typeFilter, searchQuery]);
+  }, [data, typeFilter, onlyPendingValidation, searchQuery]);
 
   const calendarData = useMemo(
     () => groupByMonth(filteredTransactions),
@@ -417,7 +451,7 @@ export default function TransactionsScreen() {
       setForm({
         type: "expense",
         currency: "COP",
-        transaction_date: new Date().toISOString().split("T")[0],
+        transaction_date: todayBogota(),
       });
     },
     onError: (err: unknown) => {
@@ -454,7 +488,8 @@ export default function TransactionsScreen() {
       setShowCreateCategoryModal(false);
       setNewCategoryForm({ name: "", icon_key: "" });
     },
-    onError: () => Alert.alert("Error", "No se pudo crear la categoría"),
+    onError: (err: unknown) =>
+      Alert.alert("Error", apiErrorMessage(err, "No se pudo crear la categoría")),
   });
 
   const createSubcategoryMutation = useMutation({
@@ -471,7 +506,8 @@ export default function TransactionsScreen() {
       setShowCreateSubcategoryModal(false);
       setNewSubcategoryForm({ name: "", icon_key: "" });
     },
-    onError: () => Alert.alert("Error", "No se pudo crear la subcategoría"),
+    onError: (err: unknown) =>
+      Alert.alert("Error", apiErrorMessage(err, "No se pudo crear la subcategoría")),
   });
 
   function handleCreateCategory() {
@@ -505,7 +541,8 @@ export default function TransactionsScreen() {
       setShowCreateObjectiveModal(false);
       setNewObjectiveForm({ name: "", type: "goal", target_amount: "" });
     },
-    onError: () => Alert.alert("Error", "No se pudo crear la meta"),
+    onError: (err: unknown) =>
+      Alert.alert("Error", apiErrorMessage(err, "No se pudo crear la meta")),
   });
 
   function handleCreateObjective() {
@@ -524,7 +561,8 @@ export default function TransactionsScreen() {
       setShowCreateCompanyModal(false);
       setNewCompanyForm({ name: "" });
     },
-    onError: () => Alert.alert("Error", "No se pudo crear la empresa"),
+    onError: (err: unknown) =>
+      Alert.alert("Error", apiErrorMessage(err, "No se pudo crear la empresa")),
   });
 
   function handleCreateCompany() {
@@ -550,6 +588,42 @@ export default function TransactionsScreen() {
         "Error",
         err instanceof Error ? err.message : "No se pudo duplicar la transacción",
       );
+    },
+  });
+
+  // Validación pedida por la notificación: se deriva de la lista (local u
+  // online), sin navegar. Si no está, avisa y limpia el parámetro.
+  const paramTx = validateParam
+    ? data?.data.find((t) => String(t.id) === String(validateParam))
+    : undefined;
+  const activeValidation = validateTarget ?? (paramTx?.needs_validation ? paramTx : null);
+  useEffect(() => {
+    // Con la lista aún refrescando, la transacción nueva puede no haber llegado.
+    if (!validateParam || !data || isFetching || paramTx?.needs_validation) return;
+    toast.info("No encontramos ese pago por validar en tu lista");
+    router.setParams({ validate: undefined });
+  }, [validateParam, data, isFetching, paramTx]);
+
+  function closeValidation() {
+    setValidateTarget(null);
+    if (validateParam) router.setParams({ validate: undefined });
+  }
+
+  const validateMutation = useMutation({
+    mutationFn: (dto: { transaction_date: string; amount?: number }) =>
+      validateRecurringTransaction(userId as number, activeValidation!.id, dto),
+    onSuccess: async (updated) => {
+      // Best effort: el caché local deja de mostrar el badge sin esperar al refetch.
+      await localRepo.saveTransactions([updated]).catch(() => {});
+      queryClient.invalidateQueries({ queryKey: ["transactions", userId] });
+      queryClient.invalidateQueries({ queryKey: ["bank-accounts", userId] });
+      queryClient.invalidateQueries({ queryKey: ["financial-liabilities", userId] });
+      closeValidation();
+      toast.success("Pago validado");
+    },
+    onError: (err: unknown) => {
+      // 400 (fecha futura, saldo insuficiente) y 409 (ya validada): mensaje del API.
+      toast.error(apiErrorMessage(err, "No se pudo validar el pago"));
     },
   });
 
@@ -598,12 +672,22 @@ export default function TransactionsScreen() {
     return (
       <View className="flex-row items-center gap-2">
         {tx.is_pending_sync === true && <Badge tone="warning">Pendiente</Badge>}
+        {tx.needs_validation === true && (
+          <Pressable
+            onPress={() => setValidateTarget(tx)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Validar pago ${tx.description ?? tx.id}`}
+          >
+            <Badge tone="warning">Validar pago</Badge>
+          </Pressable>
+        )}
         <Text
           className={`text-sm font-num-semibold ${TYPE_AMOUNT_CLASS[tx.type]}`}
           style={{ fontVariant: ["tabular-nums"] }}
         >
           {tx.type === "income" ? "+" : "-"}
-          {formatCurrency(Number(tx.amount))}
+          {formatCurrency(Number(tx.amount), tx.currency)}
         </Text>
         <Pressable onPress={() => handleClonePress(tx)} hitSlop={8} accessibilityLabel="Duplicar transacción">
           <Copy size={16} color={PALETTE[resolvedScheme].mutedForeground} />
@@ -660,7 +744,13 @@ export default function TransactionsScreen() {
         <PageHeader
           title="Transacciones"
           actions={
-            <View className="flex-row gap-2">
+            <View className="flex-row flex-wrap gap-2">
+              {!isGuest && (
+                <Button size="sm" variant="outline" onPress={() => router.push("/recurring")}>
+                  <RefreshCw size={16} color={PALETTE[resolvedScheme].foreground} />
+                  <Text className="text-sm font-sans-medium text-foreground">Recurrentes</Text>
+                </Button>
+              )}
               <Button size="sm" variant="outline" onPress={() => setShowTransferModal(true)}>
                 <ArrowLeftRight size={16} color={PALETTE[resolvedScheme].foreground} />
                 <Text className="text-sm font-sans-medium text-foreground">Transferir</Text>
@@ -697,6 +787,13 @@ export default function TransactionsScreen() {
           size="sm"
           selected={typeFilter === "ALL"}
           onPress={() => setTypeFilter("ALL")}
+        />
+        <Chip
+          label="Por validar"
+          shape="pill"
+          size="sm"
+          selected={onlyPendingValidation}
+          onPress={() => setOnlyPendingValidation((v) => !v)}
         />
         {TRANSACTION_TYPES.map((t) => (
           <Chip
@@ -804,6 +901,19 @@ export default function TransactionsScreen() {
                 }
                 placeholder="0"
               />
+
+              <Text className="text-sm font-sans-medium text-foreground mb-1.5">Moneda</Text>
+              <View className="flex-row gap-2 mb-4">
+                {TX_CURRENCIES.map((cur) => (
+                  <Chip
+                    key={cur}
+                    label={cur}
+                    size="sm"
+                    selected={form.currency === cur}
+                    onPress={() => setForm((p) => ({ ...p, currency: cur }))}
+                  />
+                ))}
+              </View>
 
               <View className="flex-row items-center justify-between mb-1.5">
                 <Text className="text-sm font-sans-medium text-foreground">Categoría</Text>
@@ -1142,13 +1252,13 @@ export default function TransactionsScreen() {
                     (bankAccounts ?? []).map((a) => (
                       <Chip
                         key={a.id}
-                        label={`${a.bank_name} ${a.masked_account_number}`}
+                        label={`${a.bank_name} ${a.masked_account_number} · ${a.currency}`}
                         selected={form.account_id === a.id}
                         onPress={() =>
                           setForm((p) =>
                             patrimonyKindOf(p) === "account" && p.account_id === a.id
                               ? clearPatrimonyFields(p)
-                              : setPatrimony(p, "account", a.id),
+                              : inheritCurrency(setPatrimony(p, "account", a.id), a.currency),
                           )
                         }
                         className="mr-2"
@@ -1164,13 +1274,13 @@ export default function TransactionsScreen() {
                     (financialAssets ?? []).map((a) => (
                       <Chip
                         key={a.id}
-                        label={a.name}
+                        label={`${a.name} · ${a.currency}`}
                         selected={form.asset_id === a.id}
                         onPress={() =>
                           setForm((p) =>
                             patrimonyKindOf(p) === "asset" && p.asset_id === a.id
                               ? clearPatrimonyFields(p)
-                              : setPatrimony(p, "asset", a.id),
+                              : inheritCurrency(setPatrimony(p, "asset", a.id), a.currency),
                           )
                         }
                         className="mr-2"
@@ -1186,13 +1296,13 @@ export default function TransactionsScreen() {
                     (financialLiabilities ?? []).map((l) => (
                       <Chip
                         key={l.id}
-                        label={l.name}
+                        label={`${l.name} · ${l.currency}`}
                         selected={form.liability_id === l.id}
                         onPress={() =>
                           setForm((p) =>
                             patrimonyKindOf(p) === "liability" && p.liability_id === l.id
                               ? clearPatrimonyFields(p)
-                              : setPatrimony(p, "liability", l.id),
+                              : inheritCurrency(setPatrimony(p, "liability", l.id), l.currency),
                           )
                         }
                         className="mr-2"
@@ -1200,6 +1310,12 @@ export default function TransactionsScreen() {
                     ))
                   ))}
               </ScrollView>
+
+              {createFxNotice && (
+                <Text className="text-xs font-sans text-muted-foreground mb-2">
+                  {createFxNotice}
+                </Text>
+              )}
 
               <View className="flex-row gap-3 mt-2 mb-4">
                 <Button
@@ -1415,6 +1531,15 @@ export default function TransactionsScreen() {
         liabilities={financialLiabilities ?? []}
         onClose={() => setShowTransferModal(false)}
         onCreated={() => queryClient.invalidateQueries({ queryKey: ["transactions", userId] })}
+      />
+
+      <ValidatePaymentModal
+        visible={!!activeValidation}
+        transaction={activeValidation}
+        isOnline={isOnline}
+        isPending={validateMutation.isPending}
+        onClose={closeValidation}
+        onConfirm={(dto) => validateMutation.mutate(dto)}
       />
 
       <CloneTransactionModal

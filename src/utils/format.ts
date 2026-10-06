@@ -1,8 +1,9 @@
 /**
  * Formatea un monto en pesos colombianos sin decimales (usado en toda la app);
- * con `"USD"`, en dólares con centavos. Nunca sumes montos de monedas distintas.
+ * con otra moneda (código ISO de 3 letras: USD, EUR…), con centavos.
+ * Nunca sumes montos de monedas distintas.
  */
-export function formatCurrency(amount: number, currency: "COP" | "USD" = "COP"): string {
+export function formatCurrency(amount: number, currency: string = "COP"): string {
   return new Intl.NumberFormat("es-CO", {
     style: "currency",
     currency,
@@ -10,15 +11,27 @@ export function formatCurrency(amount: number, currency: "COP" | "USD" = "COP"):
   }).format(amount);
 }
 
+/** TRM (COP por 1 USD) con dos decimales y separadores es-CO, sin símbolo: "4.100,25". */
+export function formatRate(rate: number): string {
+  return new Intl.NumberFormat("es-CO", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(rate);
+}
+
 /**
  * Fecha+hora es-CO de un instante que llega como epoch en ms serializado
  * ("1727000000000", así manda Keycloak sesiones/eventos) o como ISO.
  * `null`/inválido → "—".
+ *
+ * - `hour12: false` fuerza 24 h: el marcador "a. m." de es-CO sale con espacio
+ *   interno ("a. m.") y quedaba pegado al texto.
+ * - Solo un string de dígitos se interpreta como epoch; `Number()` aceptaba
+ *   "1e3", "0x10" o " 12 " y los pasaba como ms silenciosamente.
  */
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return "—";
-  const asNumber = Number(value);
-  const d = new Date(Number.isFinite(asNumber) ? asNumber : value);
+  const d = /^\d+$/.test(value) ? new Date(Number(value)) : new Date(value);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("es-CO", {
     day: "2-digit",
@@ -26,6 +39,7 @@ export function formatDateTime(value: string | null | undefined): string {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   });
 }
 

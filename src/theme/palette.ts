@@ -116,7 +116,7 @@ export const PALETTE: Record<Scheme, TokenSet> = {
     input: rgb("47 125 83"),
     ring: rgb("212 165 58"),
     chart1: rgb("212 165 58"),
-    chart2: rgb("30 92 58"),
+    chart2: rgb("143 203 166"),
     chart3: rgb("232 185 74"),
     chart4: rgb("47 125 83"),
     chart5: rgb("85 90 94"),

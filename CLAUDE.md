@@ -8,6 +8,8 @@ Buenas prácticas de este repo (cada línea ≤200 caracteres):
 - Iconos: lucide-react-native, siempre por subpath profundo desde src/components/ui/icons.ts (`lucide-react-native/icons/<kebab-case>`) — el barrel infla el bundle con ~1500 módulos.
 - Fuentes: Space Grotesk (font-display/font-num) y Schibsted Grotesk (font-sans), el peso va en la familia (-Medium/-SemiBold/-Bold) — no combines esas clases con font-medium/semibold/bold.
 - Gráficas: react-native-gifted-charts vía src/components/charts (TrendAreaChart, CategoryDonut, CategoryBars) + colores de src/hooks/useChartColors — no agregues otra librería de charts.
+- Paleta: un `--chart-N` debe contrastar ≥3:1 contra `--card`/`--background` en light y dark; `--card`/`--surface`/`--muted`/`--border` no son colores de serie.
+- El mismo set está duplicado en Sprig-web/src/styles.css: cambia los tres (global.css, palette.ts, styles.css). Donut con borde de 1 px `--border`, nunca `colors.card`.
 - Offline-first: SQLite en src/database + cola pending_operations + hooks useOfflineQuery/useOfflineMutations — toda pantalla de datos debe andar sin conexión con caché local.
 - Backend envuelve todo en {status, data, timestamp} y a veces {data:[...], total} anidado; usa unwrapEnvelope/unwrapList de src/api/client.ts en las funciones de la API, nunca asumas arreglo desnudo.
 - Verificación antes de reportar terminado: `pnpm exec tsc --noEmit && pnpm exec eslint . && pnpm exec jest` en verde (config real en jest.config.js, no en el campo "jest" de package.json).

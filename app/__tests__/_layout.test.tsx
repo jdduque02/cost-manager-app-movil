@@ -14,9 +14,11 @@
  */
 import React from "react";
 import { render, act } from "@testing-library/react-native";
+import { AppState } from "react-native";
 import RootLayout from "../_layout";
 import { useAuthStore } from "@/store/auth.store";
 import { useOfflineStore } from "@/store/offline.store";
+import { processRecurring } from "@/api/recurring.api";
 
 // global.css es una hoja de estilos de NativeWind (directivas @tailwind), no
 // JS/TS válido — Jest no puede parsearlo, así que se mockea como módulo vacío.
@@ -100,6 +102,8 @@ jest.mock("@/store/offline.store", () => ({
   startPeriodicSync: jest.fn(),
   stopPeriodicSync: jest.fn(),
 }));
+
+jest.mock("@/api/recurring.api", () => ({ processRecurring: jest.fn() }));
 
 jest.mock("@/database/database.service", () => ({
   getDatabase: jest.fn(() => Promise.resolve()),
@@ -223,5 +227,68 @@ describe("RootLayout — guard de navegación en share intent", () => {
       pathname: "/shared-transaction",
       params: { text: "Compra por $50.000 en Exito" },
     });
+  });
+});
+
+describe("RootLayout — process de recurrentes (R2.3)", () => {
+  const mockProcess = processRecurring as jest.Mock;
+  let appStateHandler: ((state: string) => void) | undefined;
+
+  function setSession(state: { userId?: number; isGuest?: boolean; isOnline?: boolean }) {
+    mockUseAuthStore.mockImplementation((selector: (s: unknown) => unknown) =>
+      selector({
+        isAuthenticated: true,
+        userId: state.userId,
+        isGuest: state.isGuest ?? false,
+        initialize: jest.fn(),
+      }),
+    );
+    mockUseOfflineStore.mockImplementation((selector: (s: unknown) => unknown) =>
+      selector({ setOnlineStatus: jest.fn(), isOnline: state.isOnline ?? true }),
+    );
+  }
+
+  beforeEach(() => {
+    mockProcess.mockReset().mockResolvedValue({ created: 0, reminders: 0, adopted: 0 });
+    appStateHandler = undefined;
+    jest.spyOn(AppState, "addEventListener").mockImplementation(((_: string, h: (s: string) => void) => {
+      appStateHandler = h;
+      return { remove: jest.fn() };
+    }) as never);
+    setRootNavigationStateKey(null);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it("se llama una vez tras el login y no se repite al volver a primer plano el mismo día", async () => {
+    setSession({ userId: 7 });
+    render(<RootLayout />);
+    await act(async () => {});
+    expect(mockProcess).toHaveBeenCalledTimes(1);
+    expect(mockProcess).toHaveBeenCalledWith(7);
+
+    await act(async () => appStateHandler?.("active"));
+    expect(mockProcess).toHaveBeenCalledTimes(1);
+  });
+
+  it("no se llama para el invitado ni sin conexión", async () => {
+    setSession({ userId: 7, isGuest: true });
+    const first = render(<RootLayout />);
+    await act(async () => {});
+    first.unmount();
+
+    setSession({ userId: 7, isOnline: false });
+    render(<RootLayout />);
+    await act(async () => {});
+    expect(mockProcess).not.toHaveBeenCalled();
+  });
+
+  it("un fallo no rompe la app y se reintenta al volver a primer plano", async () => {
+    mockProcess.mockRejectedValueOnce(new Error("sin red"));
+    setSession({ userId: 7 });
+    render(<RootLayout />);
+    await act(async () => {});
+    await act(async () => appStateHandler?.("active"));
+    expect(mockProcess).toHaveBeenCalledTimes(2);
   });
 });

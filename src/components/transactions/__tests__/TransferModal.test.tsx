@@ -64,7 +64,7 @@ describe("TransferModal", () => {
         onCreated={() => {}}
       />,
     );
-    fireEvent.press(screen.getAllByText("Bancolombia ****1234")[0]);
+    fireEvent.press(screen.getAllByText("Bancolombia ****1234 · COP")[0]);
     fireEvent.press(screen.getByText("Transferir"));
     expect(Alert.alert).toHaveBeenCalledWith(
       "Sin conexión",
@@ -107,8 +107,8 @@ describe("TransferModal", () => {
         onCreated={onCreated}
       />,
     );
-    fireEvent.press(screen.getAllByText("Bancolombia ****1234")[0]);
-    const davivienda = screen.getAllByText("Davivienda ****5678");
+    fireEvent.press(screen.getAllByText("Bancolombia ****1234 · COP")[0]);
+    const davivienda = screen.getAllByText("Davivienda ****5678 · COP");
     fireEvent.press(davivienda[davivienda.length - 1]);
     fireEvent.changeText(screen.getByTestId("transfer-amount-input"), "50000");
     fireEvent.press(screen.getByText("Transferir"));
@@ -124,5 +124,28 @@ describe("TransferModal", () => {
       );
     });
     await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+  });
+
+  it("muestra la moneda en los selectores y avisa si el destino es la otra moneda (R7.2, R7.3)", () => {
+    const usd = { ...ACCOUNTS[1], id: 3, bank_name: "Global66", masked_account_number: "****9999", currency: "USD" };
+    renderWithClient(
+      <TransferModal
+        visible
+        userId={1}
+        isOnline
+        bankAccounts={[ACCOUNTS[0], usd]}
+        liabilities={[]}
+        onClose={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+    const NOTICE = "Se registrará en USD con la TRM oficial de la fecha";
+    fireEvent.press(screen.getAllByText("Bancolombia ****1234 · COP")[0]);
+    expect(screen.getByText("Monto (COP)")).toBeTruthy();
+    expect(screen.queryByText(NOTICE)).toBeNull();
+
+    const global66 = screen.getAllByText("Global66 ****9999 · USD");
+    fireEvent.press(global66[global66.length - 1]);
+    expect(screen.getByText(NOTICE)).toBeTruthy();
   });
 });

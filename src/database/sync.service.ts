@@ -234,8 +234,9 @@ export async function syncPendingOperations(): Promise<SyncResult> {
       result.synced++;
     } catch (err) {
       // 4xx: reintentar daría el mismo rechazo → queda atascada con su motivo
-      // hasta que el usuario pulse "Reintentar". Red, 5xx, bloqueo de Cloud
-      // Armor o sesión expirada son transitorios: cuentan un reintento más.
+      // hasta que el usuario pulse "Reintentar". Red, 5xx o sesión expirada son
+      // transitorios: cuentan un reintento más (el bloqueo de Cloud Armor, abajo,
+      // ni eso).
       const status = isAxiosError(err) ? err.response?.status : undefined;
       if (status === 404 && op.operation === "DELETE") {
         // Ya lo borró otro dispositivo: el resultado es el que se quería.
@@ -243,7 +244,16 @@ export async function syncPendingOperations(): Promise<SyncResult> {
         result.synced++;
         continue;
       }
-      if (classifyApiError(err) === "client") {
+      // `blocked` (403 de Cloud Armor) depende de la red, no de la operación: no
+      // se atasca ni gasta reintentos. Se corta el ciclo (el resto fallaría igual)
+      // y la cola queda pendiente para la próxima corrida en una red permitida.
+      // `failed` sube para que el usuario vea el bloqueo.
+      const kind = classifyApiError(err);
+      if (kind === "blocked") {
+        result.failed++;
+        break;
+      }
+      if (kind === "client") {
         await markOperationFailed(
           op.id,
           status === 404 && op.operation === "UPDATE"
