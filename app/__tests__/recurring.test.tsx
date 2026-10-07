@@ -145,6 +145,72 @@ it("con conexión pide la lista completa, la cachea y crear va al API sin encola
   expect(localRepo.enqueuePendingOperation).not.toHaveBeenCalled();
 });
 
+it("ingreso en USD sobre cuenta COP envía currency, avisa la TRM y no convierte en el cliente", async () => {
+  (recurringApi.listRecurring as jest.Mock).mockResolvedValue([]);
+  (recurringApi.createRecurring as jest.Mock).mockResolvedValue(rule({ id: 2, type: "income", currency: "USD" }));
+
+  renderWithClient(<RecurringScreen />);
+  fireEvent.press(await screen.findByLabelText("Nuevo recurrente"));
+  fireEvent.press(screen.getByText("Ingreso"));
+  fireEvent.changeText(screen.getByPlaceholderText("Ej: Arriendo"), "Nómina");
+  fireEvent.changeText(screen.getByTestId("recurring-amount-input"), "1000");
+  fireEvent.press(await screen.findByText("Bancolombia ****1234"));
+  expect(screen.queryByText(/TRM oficial/)).toBeNull();
+
+  fireEvent.press(screen.getByText("USD"));
+  expect(screen.getByText(/Se registrará en COP con la TRM oficial de la fecha \(aprox\.; tu banco puede usar otra tasa\)/)).toBeTruthy();
+  fireEvent.press(screen.getByText("Crear"));
+
+  await waitFor(() =>
+    expect(recurringApi.createRecurring).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ type: "income", amount: 1000, currency: "USD", account_id: 3 }),
+    ),
+  );
+});
+
+it("ingreso sin elegir moneda no envía currency; un gasto nunca la envía ni muestra el selector", async () => {
+  (recurringApi.listRecurring as jest.Mock).mockResolvedValue([]);
+  (recurringApi.createRecurring as jest.Mock).mockResolvedValue(rule({ id: 2 }));
+
+  renderWithClient(<RecurringScreen />);
+  fireEvent.press(await screen.findByLabelText("Nuevo recurrente"));
+  expect(screen.queryByText("Moneda")).toBeNull();
+  fireEvent.press(screen.getByText("Ingreso"));
+  expect(screen.getByText("Moneda")).toBeTruthy();
+  fireEvent.press(screen.getByText("USD"));
+  fireEvent.press(screen.getByText("Gasto"));
+  expect(screen.queryByText("Moneda")).toBeNull();
+  fireEvent.changeText(screen.getByPlaceholderText("Ej: Arriendo"), "Netflix");
+  fireEvent.changeText(screen.getByTestId("recurring-amount-input"), "45000");
+  fireEvent.press(await screen.findByText("Bancolombia ****1234"));
+  fireEvent.press(screen.getByText("Crear"));
+
+  await waitFor(() => expect(recurringApi.createRecurring).toHaveBeenCalled());
+  expect((recurringApi.createRecurring as jest.Mock).mock.calls[0][1]).not.toHaveProperty("currency");
+});
+
+it("el listado muestra el monto en la moneda real de la regla", async () => {
+  (recurringApi.listRecurring as jest.Mock).mockResolvedValue([
+    rule({ type: "income", currency: "USD", amount: 1000 }),
+  ]);
+  renderWithClient(<RecurringScreen />);
+  expect(await screen.findByText(/US\$\s?1\.000,00/)).toBeTruthy();
+});
+
+it("editar un ingreso en USD conserva su moneda en el PATCH", async () => {
+  (recurringApi.listRecurring as jest.Mock).mockResolvedValue([rule({ type: "income", currency: "USD" })]);
+  (recurringApi.updateRecurring as jest.Mock).mockResolvedValue(rule({ type: "income", currency: "USD" }));
+
+  renderWithClient(<RecurringScreen />);
+  fireEvent.press(await screen.findByLabelText("Editar Arriendo"));
+  fireEvent.press(screen.getByText("Guardar"));
+
+  await waitFor(() =>
+    expect(recurringApi.updateRecurring).toHaveBeenCalledWith(7, 1, expect.objectContaining({ currency: "USD" })),
+  );
+});
+
 it("el invitado no ve la entrada en Transacciones", async () => {
   mockState.isGuest = true;
   const { unmount } = renderWithClient(<TransactionsScreen />);

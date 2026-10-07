@@ -65,6 +65,13 @@ it("guarda y lee recurring_id y needs_validation de las transacciones del servid
   expect(tx).toMatchObject({ recurring_id: 3, needs_validation: true });
 });
 
+it("el caché conserva la moneda propia del ingreso recurrente, sin convertir el monto", async () => {
+  const usd = { ...rule(1), type: "income", currency: "USD", amount: 1000 } as RecurringTransaction;
+  await saveRecurringTransactions(USER, [usd]);
+  expect(await getLocalRecurringTransactions(USER)).toEqual([usd]);
+  expect(await getPendingOperations()).toEqual([]);
+});
+
 it("el caché de recurrentes se reemplaza entero, no encola y se borra al cerrar sesión", async () => {
   await saveRecurringTransactions(USER, [rule(1), rule(2)]);
   await saveRecurringTransactions(USER, [rule(2)]);

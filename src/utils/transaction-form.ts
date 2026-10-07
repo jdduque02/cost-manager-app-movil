@@ -106,6 +106,9 @@ export function fxNotice(txCurrency?: string, productCurrency?: string): string 
   return `Se registrará en ${productCurrency} con la TRM oficial de la fecha`;
 }
 
+/** Cierre de todo texto que muestra una conversión con TRM (ADR-013). */
+export const FX_APPROX_NOTE = "(aprox.; tu banco puede usar otra tasa)";
+
 /**
  * Segunda línea de la fila cuando hubo conversión (R7.4): el convertido en la
  * moneda del producto, que es la otra del par COP/USD (solo ese par convierte).
@@ -115,7 +118,7 @@ export function convertedLine(
 ): string | null {
   if (tx.applied_amount == null || tx.fx_rate == null) return null;
   const productCurrency = tx.currency === "USD" ? "COP" : "USD";
-  return `≈ ${formatCurrency(tx.applied_amount, productCurrency)} · TRM ${formatRate(tx.fx_rate)} (aprox.; tu banco puede usar otra tasa)`;
+  return `≈ ${formatCurrency(tx.applied_amount, productCurrency)} · TRM ${formatRate(tx.fx_rate)} ${FX_APPROX_NOTE}`;
 }
 
 /** Ayuda de la pestaña "Pasivo": el API sube la deuda con gastos y la baja con ingresos/inversiones (R6.11). */

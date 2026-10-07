@@ -38,6 +38,13 @@ describe("CurrencyInput", () => {
     expect(screen.getByDisplayValue("1.234.567")).toBeTruthy();
   });
 
+  it("muestra \"$\" por defecto y el prefijo recibido (US$)", () => {
+    const { rerender } = render(<CurrencyInput value="" onChangeValue={() => {}} />);
+    expect(screen.getByText("$")).toBeTruthy();
+    rerender(<CurrencyInput value="" onChangeValue={() => {}} prefix="US$" />);
+    expect(screen.getByText("US$")).toBeTruthy();
+  });
+
   it("muestra la primera muestra cuando está vacío y sin foco", () => {
     render(<CurrencyInput value="" onChangeValue={() => {}} />);
     expect(screen.getByText(SAMPLE_AMOUNTS[0])).toBeTruthy();

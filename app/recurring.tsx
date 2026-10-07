@@ -26,6 +26,7 @@ import { StaleDataBanner } from "@/components/StaleDataBanner";
 import { ArrowLeft, Plus, Pencil, Trash, RefreshCw, WifiOff } from "@/components/ui/icons";
 import { formatCurrency } from "@/utils/format";
 import { toast } from "@/utils/toast";
+import { TX_CURRENCIES, fxNotice, FX_APPROX_NOTE } from "@/utils/transaction-form";
 import type {
   CreateRecurringTransactionDto,
   RecurringFrequency,
@@ -108,6 +109,8 @@ interface FormState {
   kind: Kind;
   name: string;
   amount: string;
+  /** Solo ingresos. Sin elegir (`undefined`) rige la moneda de la cuenta/pasivo y no se envía. */
+  currency?: TxCurrency;
   categoryId?: number;
   link: Link;
   accountId?: number;
@@ -145,6 +148,7 @@ function formFromRule(r: RecurringTransaction): FormState {
     kind: r.type !== "transfer" ? r.type : r.destination_liability_id ? "debt" : "transfer",
     name: r.name,
     amount: String(r.amount),
+    currency: r.type === "income" && isTxCurrency(r.currency) ? r.currency : undefined,
     categoryId: r.category_id ?? undefined,
     link: r.liability_id ? "liability" : "account",
     accountId: r.account_id ?? undefined,
@@ -164,6 +168,9 @@ function formFromRule(r: RecurringTransaction): FormState {
 
 const isTransfer = (k: Kind) => k === "transfer" || k === "debt";
 
+type TxCurrency = (typeof TX_CURRENCIES)[number];
+const isTxCurrency = (c: unknown): c is TxCurrency => TX_CURRENCIES.some((t) => t === c);
+
 /** Lo que el API acepta en ambos: crear y editar. Devuelve un error legible o el payload. */
 function commonFields(f: FormState): string | Omit<UpdateRecurringTransactionDto, "account_id" | "liability_id"> {
   const amount = parseFloat(f.amount);
@@ -176,6 +183,8 @@ function commonFields(f: FormState): string | Omit<UpdateRecurringTransactionDto
   return {
     name: f.name.trim(),
     amount,
+    // El API convierte con TRM por ocurrencia; el cliente solo manda la moneda elegida (solo ingresos).
+    ...(f.kind === "income" && f.currency ? { currency: f.currency } : {}),
     ...(f.categoryId && !isTransfer(f.kind) ? { category_id: f.categoryId } : {}),
     mode: f.mode,
     reminder_days: f.reminderDays === "" ? 1 : parseInt(f.reminderDays, 10),
@@ -349,6 +358,16 @@ export default function RecurringScreen() {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
+  // Moneda del producto elegido y la que rige el monto del ingreso (la propia, si la eligió).
+  const productCurrency =
+    form.link === "account"
+      ? accounts?.find((a) => a.id === form.accountId)?.currency
+      : liabilities?.find((l) => l.id === form.liabilityId)?.currency;
+  const amountCurrency: TxCurrency =
+    form.currency ?? (isTxCurrency(productCurrency) ? productCurrency : "COP");
+  const showCurrency = form.kind === "income";
+  const conversion = showCurrency ? fxNotice(amountCurrency, productCurrency) : null;
+
   const rules = (data ?? []).filter((r) => filter === "all" || r.status === filter);
 
   const accountChips = (selected: number | undefined, onSelect: (id: number) => void, exclude?: number) => (
@@ -504,8 +523,31 @@ export default function RecurringScreen() {
 
               <Input label="Nombre" value={form.name} onChangeText={(v) => set("name", v)} placeholder="Ej: Arriendo" />
               <CurrencyInput label="Monto" value={form.amount} onChangeValue={(v) => set("amount", v)}
+                prefix={showCurrency && amountCurrency === "USD" ? "US$" : "$"}
                 testID="recurring-amount-input"
               />
+              {showCurrency && (
+                <>
+                  {label("Moneda")}
+                  <View className="flex-row gap-2 mb-2">
+                    {TX_CURRENCIES.map((cur) => (
+                      <Chip
+                        key={cur}
+                        label={cur}
+                        size="sm"
+                        selected={amountCurrency === cur}
+                        onPress={() => set("currency", cur)}
+                      />
+                    ))}
+                  </View>
+                  {conversion && (
+                    <Text className="text-xs font-sans text-muted-foreground mb-4">
+                      {`${conversion} ${FX_APPROX_NOTE}`}
+                    </Text>
+                  )}
+                  {!conversion && <View className="mb-2" />}
+                </>
+              )}
 
               {isTransfer(form.kind) ? (
                 <>
