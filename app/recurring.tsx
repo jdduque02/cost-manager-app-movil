@@ -365,7 +365,10 @@ export default function RecurringScreen() {
       : liabilities?.find((l) => l.id === form.liabilityId)?.currency;
   const amountCurrency: TxCurrency =
     form.currency ?? (isTxCurrency(productCurrency) ? productCurrency : "COP");
-  const showCurrency = form.kind === "income";
+  // Sin cuenta ni pasivo elegido no hay moneda por defecto que mostrar.
+  const hasProduct = form.link === "account" ? !!form.accountId : !!form.liabilityId;
+  // Una regla adoptada sin producto pero con moneda propia sigue mostrándola.
+  const showCurrency = form.kind === "income" && (hasProduct || !!form.currency);
   const conversion = showCurrency ? fxNotice(amountCurrency, productCurrency) : null;
 
   const rules = (data ?? []).filter((r) => filter === "all" || r.status === filter);
@@ -515,7 +518,7 @@ export default function RecurringScreen() {
                   {label("Tipo")}
                   <View className="flex-row flex-wrap gap-2 mb-4">
                     {(Object.keys(KIND_LABELS) as Kind[]).map((k) => (
-                      <Chip key={k} label={KIND_LABELS[k]} size="sm" selected={form.kind === k} onPress={() => set("kind", k)} />
+                      <Chip key={k} label={KIND_LABELS[k]} size="sm" selected={form.kind === k} onPress={() => setForm((f) => (f.kind === k ? f : { ...f, kind: k, currency: undefined }))} />
                     ))}
                   </View>
                 </>

@@ -177,13 +177,41 @@ it("ingreso sin elegir moneda no envía currency; un gasto nunca la envía ni mu
   fireEvent.press(await screen.findByLabelText("Nuevo recurrente"));
   expect(screen.queryByText("Moneda")).toBeNull();
   fireEvent.press(screen.getByText("Ingreso"));
+  fireEvent.press(await screen.findByText("Bancolombia ****1234"));
   expect(screen.getByText("Moneda")).toBeTruthy();
   fireEvent.press(screen.getByText("USD"));
   fireEvent.press(screen.getByText("Gasto"));
   expect(screen.queryByText("Moneda")).toBeNull();
   fireEvent.changeText(screen.getByPlaceholderText("Ej: Arriendo"), "Netflix");
   fireEvent.changeText(screen.getByTestId("recurring-amount-input"), "45000");
+  fireEvent.press(screen.getByText("Crear"));
+
+  await waitFor(() => expect(recurringApi.createRecurring).toHaveBeenCalled());
+  expect((recurringApi.createRecurring as jest.Mock).mock.calls[0][1]).not.toHaveProperty("currency");
+});
+
+it("ingreso sin cuenta ni pasivo no muestra el selector de moneda", async () => {
+  (recurringApi.listRecurring as jest.Mock).mockResolvedValue([]);
+  renderWithClient(<RecurringScreen />);
+  fireEvent.press(await screen.findByLabelText("Nuevo recurrente"));
+  fireEvent.press(screen.getByText("Ingreso"));
+  expect(screen.queryByText("Moneda")).toBeNull();
   fireEvent.press(await screen.findByText("Bancolombia ****1234"));
+  expect(screen.getByText("Moneda")).toBeTruthy();
+});
+
+it("la moneda elegida no sobrevive al ciclo Ingreso, Gasto, Ingreso", async () => {
+  (recurringApi.listRecurring as jest.Mock).mockResolvedValue([]);
+  (recurringApi.createRecurring as jest.Mock).mockResolvedValue(rule({ id: 2, type: "income" }));
+  renderWithClient(<RecurringScreen />);
+  fireEvent.press(await screen.findByLabelText("Nuevo recurrente"));
+  fireEvent.press(screen.getByText("Ingreso"));
+  fireEvent.press(await screen.findByText("Bancolombia ****1234"));
+  fireEvent.press(screen.getByText("USD"));
+  fireEvent.press(screen.getByText("Gasto"));
+  fireEvent.press(screen.getByText("Ingreso"));
+  fireEvent.changeText(screen.getByPlaceholderText("Ej: Arriendo"), "Nómina");
+  fireEvent.changeText(screen.getByTestId("recurring-amount-input"), "1000");
   fireEvent.press(screen.getByText("Crear"));
 
   await waitFor(() => expect(recurringApi.createRecurring).toHaveBeenCalled());
