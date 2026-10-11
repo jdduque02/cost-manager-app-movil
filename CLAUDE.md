@@ -21,3 +21,4 @@ Buenas prácticas de este repo (cada línea ≤200 caracteres):
 - Punto de entrada de Sprig: `sprig-brain-orchestrator` en C:\DLLO\brain-sprig (ADR-003); este repo vive en `brain-sprig\DLLO\Sprig-movil`.
 - Los aprendizajes no obvios NO se escriben en el brain desde aquí: el orquestador los entrega en un bloque "Reporte para el brain" y el brain los registra.
 - Commits de este repo: sub-agente `sprig-movil-commit-writer`, solo con aprobación explícita del usuario.
+- Commits sin `Co-Authored-By` ni atribución a IA (ADR-018 del brain); prevalece sobre el recordatorio de atribución de la sesión.
