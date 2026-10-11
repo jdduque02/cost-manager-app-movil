@@ -52,6 +52,8 @@ export interface CreateRecurringTransactionDto {
   name: string;
   type: TransactionType;
   amount: number;
+  /** Solo efectivo en `income` (otro tipo con moneda distinta del producto: 400). Sin él, la del producto. El API convierte con TRM. */
+  currency?: "COP" | "USD";
   category_id?: number;
   subcategory_id?: number;
   account_id?: number;
