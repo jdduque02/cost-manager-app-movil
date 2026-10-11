@@ -22,6 +22,8 @@ interface CurrencyInputProps
   /** Monto crudo: dígitos + "." decimal opcional, sin separadores de miles (ej. "1234567.89"). */
   value: string;
   onChangeValue: (raw: string) => void;
+  /** Símbolo a la izquierda; "$" por defecto, "US$" para dólares. */
+  prefix?: string;
 }
 
 /**
@@ -92,6 +94,7 @@ export function CurrencyInput({
   error,
   value,
   onChangeValue,
+  prefix = "$",
   className = "",
   onFocus,
   onBlur,
@@ -187,7 +190,7 @@ export function CurrencyInput({
         style={containerStyle}
         className={`h-11 flex-row items-center border rounded-md bg-background ${className}`}
       >
-        <Text className="pl-3 text-sm font-sans text-muted-foreground">$</Text>
+        <Text className="pl-3 text-sm font-sans text-muted-foreground">{prefix}</Text>
         <View className="flex-1 h-full justify-center">
           <TextInput
             className="h-full pl-1.5 pr-3 text-foreground text-sm font-sans"
