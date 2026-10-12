@@ -57,7 +57,7 @@ sin un tema común, omite el alcance en vez de forzar uno genérico como `core` 
 
 - Imperativo, no pasado ni gerundio: "agrega", "corrige", "elimina" — no "agregado", "agregando".
 - Minúscula al inicio, sin punto final.
-- Máximo ~72 caracteres en la primera línea.
+- Descripción ≤72 caracteres, sin contar emoji, tipo ni scope (ADR-022 del brain).
 - Describe QUÉ cambia el commit, no el proceso interno ("corrige cálculo del resumen mensual", no
   "cambios varios").
 - El cuerpo (si existe) usa viñetas cortas estilo historial: "Agregar/Actualizar X".
