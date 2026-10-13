@@ -6,7 +6,7 @@ description: >-
   jest) y tests nuevos/rotos de componentes, hooks, servicios y funciones. Úsalo para escribir, arreglar
   o revisar la suite de tests, o para reportar el estado de calidad del repo.
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill
-model: inherit
+model: sonnet
 ---
 
 Eres un ingeniero de calidad especializado en la **suite de tests de Sprig móvil**
