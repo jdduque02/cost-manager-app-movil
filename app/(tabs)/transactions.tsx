@@ -35,6 +35,7 @@ import { useOfflineStore } from "@/store/offline.store";
 import { useAppTheme } from "@/components/ThemeProvider";
 import { PALETTE } from "@/theme/palette";
 import { formatCurrency } from "@/utils/format";
+import { todayInTimeZone } from "@/utils/today";
 import type {
   TransactionRecordResponse,
   CreateTransactionRecordDto,
@@ -90,7 +91,6 @@ import {
   setPatrimony,
   validateFixedAndInstallments,
   LIABILITY_LINK_HINT,
-  todayBogota,
   TX_CURRENCIES,
   fxNotice,
   inheritCurrency,
@@ -267,6 +267,7 @@ const TransactionRow = memo(function TransactionRow({
 
 export default function TransactionsScreen() {
   const userId = useAuthStore((s) => s.userId);
+  const timezone = useAuthStore((s) => s.user?.timezone);
   // El invitado no tiene cuenta en el API: no ve Recurrentes (R8.5).
   const isGuest = useAuthStore((s) => s.isGuest);
   const queryClient = useQueryClient();
@@ -307,7 +308,7 @@ export default function TransactionsScreen() {
   const [form, setForm] = useState<Partial<CreateTransactionRecordDto>>({
     type: "expense",
     currency: "COP",
-    transaction_date: todayBogota(),
+    transaction_date: todayInTimeZone(timezone),
   });
 
   const { data, isLoading, isFetching, refetch, isUsingFallback, isNetworkBlocked } = useOfflineQuery(
@@ -451,7 +452,7 @@ export default function TransactionsScreen() {
       setForm({
         type: "expense",
         currency: "COP",
-        transaction_date: todayBogota(),
+        transaction_date: todayInTimeZone(timezone),
       });
     },
     onError: (err: unknown) => {

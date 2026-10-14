@@ -67,15 +67,6 @@ export function setPatrimony<
   return { ...cleared, liability_id: id };
 }
 
-/**
- * Hoy en America/Bogota (YYYY-MM-DD). `toISOString()` daba la fecha UTC: de
- * 19:00 a 23:59 en Colombia ya era "mañana". Colombia es UTC-5 fijo (sin
- * horario de verano), así que basta restar 5 h, sin depender del Intl de Hermes.
- */
-export function todayBogota(now: Date = new Date()): string {
-  return new Date(now.getTime() - 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
-
 /** Monedas que el API acepta en una transacción (DTO `IsIn(['COP','USD'])`). */
 export const TX_CURRENCIES = ["COP", "USD"] as const;
 

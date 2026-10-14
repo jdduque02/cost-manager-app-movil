@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useReducedMotion, EASE_STANDARD } from "@/utils/animations";
 import { useLocalSearchParams, router } from "expo-router";
 import { useAuthStore } from "@/store/auth.store";
+import { daysBetween, todayInTimeZone } from "@/utils/today";
 import * as objectivesApi from "@/api/objectives.api";
 import { apiErrorMessage } from "@/api/client";
 import { useOfflineQuery } from "@/hooks/useOfflineQuery";
@@ -70,6 +71,7 @@ export default function ObjectiveDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const objectiveId = Number(id);
   const userId = useAuthStore((s) => s.userId);
+  const timezone = useAuthStore((s) => s.user?.timezone);
   const queryClient = useQueryClient();
   const isOnline = useOfflineStore((s) => s.isOnline);
   const { resolvedScheme } = useAppTheme();
@@ -114,7 +116,7 @@ export default function ObjectiveDetailScreen() {
         userId as number,
         objectiveId,
         amount,
-        new Date().toISOString().split("T")[0],
+        todayInTimeZone(timezone),
         note,
       ),
     onSuccess: () => {
@@ -192,11 +194,14 @@ export default function ObjectiveDetailScreen() {
 
   const remaining = Math.max(target - Number(objective.current_balance), 0);
 
-  const targetDate = objective.end_date ? new Date(objective.end_date) : null;
-  const now = new Date();
-  const daysLeft = targetDate
-    ? Math.max(Math.ceil((targetDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)), 0)
+  // Diferencia de cadenas YYYY-MM-DD: sin `Date` local ni corrimiento por UTC.
+  const endDay = objective.end_date ? objective.end_date.slice(0, 10) : null;
+  const daysLeft = endDay
+    ? Math.max(daysBetween(todayInTimeZone(timezone), endDay), 0)
     : 0;
+  const endDayLabel = endDay
+    ? `${Number(endDay.slice(8, 10))}/${Number(endDay.slice(5, 7))}/${endDay.slice(0, 4)}`
+    : null;
 
   const monthlyNeeded = daysLeft > 0 ? remaining / (daysLeft / 30) : 0;
 
@@ -247,7 +252,7 @@ export default function ObjectiveDetailScreen() {
             { label: "Monto restante", value: formatCurrency(remaining), tone: "warning" as const },
             {
               label: "Fecha objetivo",
-              value: targetDate ? targetDate.toLocaleDateString("es-CO") : "Sin definir",
+              value: endDayLabel ?? "Sin definir",
               tone: "muted" as const,
             },
             { label: "Días restantes", value: `${daysLeft} días`, tone: "muted" as const },

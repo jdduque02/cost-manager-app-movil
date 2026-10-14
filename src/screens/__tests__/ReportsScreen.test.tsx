@@ -5,7 +5,7 @@
  */
 import React from "react";
 import { render, screen } from "@testing-library/react-native";
-import ReportsScreen, { buildLocalSummary } from "../ReportsScreen";
+import ReportsScreen, { buildLocalSummary, getDateRange } from "../ReportsScreen";
 import { useOfflineQuery } from "@/hooks/useOfflineQuery";
 import { useAuthStore } from "@/store/auth.store";
 import { getLocalTransactions } from "@/database/local.repository";
@@ -72,4 +72,23 @@ it("el fallback offline agrega solo las transacciones de la moneda pedida", asyn
 
   expect(usd.totals).toEqual({ income: 100, expenses: 30, investments: 0, count: 2 });
   expect(cop.totals).toEqual({ income: 500000, expenses: 0, investments: 0, count: 1 });
+});
+
+describe("getDateRange (hoy en zona del usuario)", () => {
+  afterEach(() => jest.useRealTimers());
+
+  it("31-dic 21:00 COT (UTC ya es 1-ene) sigue en diciembre", () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-01-01T02:00:00Z"));
+    expect(getDateRange("this_month", "America/Bogota")).toEqual({ date_from: "2025-12-01", date_to: "2025-12-31" });
+    expect(getDateRange("this_year", "America/Bogota")).toEqual({ date_from: "2025-01-01", date_to: "2025-12-31" });
+    expect(getDateRange("last_month", "America/Bogota")).toEqual({ date_from: "2025-11-01", date_to: "2025-11-30" });
+    expect(getDateRange("last_7_days", "America/Bogota")).toEqual({ date_from: "2025-12-24", date_to: "2025-12-31" });
+    expect(getDateRange("last_30_days")).toEqual({ date_from: "2025-12-01", date_to: "2025-12-31" });
+  });
+
+  it("fin de mes 19:30 COT no salta al mes siguiente", () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-03-01T00:30:00Z"));
+    expect(getDateRange("this_month")).toEqual({ date_from: "2026-02-01", date_to: "2026-02-28" });
+    expect(getDateRange("last_month")).toEqual({ date_from: "2026-01-01", date_to: "2026-01-31" });
+  });
 });

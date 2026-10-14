@@ -10,7 +10,9 @@ import * as transfersApi from "@/api/transfers.api";
 import { apiErrorMessage } from "@/api/client";
 import type { BankAccountResponse, FinancialLiabilityResponse } from "@/types/banking.types";
 import type { CreateTransferDto } from "@/types/transfer.types";
-import { todayBogota, fxNotice } from "@/utils/transaction-form";
+import { fxNotice } from "@/utils/transaction-form";
+import { todayInTimeZone } from "@/utils/today";
+import { useAuthStore } from "@/store/auth.store";
 
 type DestinationKind = "account" | "liability";
 
@@ -50,7 +52,8 @@ export function TransferModal({
   const [destinationLiabilityId, setDestinationLiabilityId] = useState<number | undefined>();
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
-  const [date, setDate] = useState(todayBogota());
+  const timezone = useAuthStore((s) => s.user?.timezone);
+  const [date, setDate] = useState(() => todayInTimeZone(timezone));
 
   const destinationAccounts = bankAccounts.filter((a) => a.id !== sourceAccountId);
   // El monto va en la moneda del origen; si el destino es la otra del par, el
@@ -82,7 +85,7 @@ export function TransferModal({
     setDestinationLiabilityId(undefined);
     setAmount("");
     setDescription("");
-    setDate(todayBogota());
+    setDate(todayInTimeZone(timezone));
   }
 
   const createMutation = useMutation({

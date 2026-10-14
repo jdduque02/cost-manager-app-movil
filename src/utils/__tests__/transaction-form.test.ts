@@ -6,22 +6,11 @@ import {
   setPatrimony,
   validateFixedAndInstallments,
   LIABILITY_LINK_HINT,
-  todayBogota,
   TX_CURRENCIES,
   fxNotice,
   inheritCurrency,
   convertedLine,
 } from "../transaction-form";
-
-describe("todayBogota (R7.7)", () => {
-  it("a las 20:00 de Bogotá (01:00 UTC del día siguiente) sigue siendo hoy", () => {
-    expect(todayBogota(new Date("2026-10-04T20:00:00-05:00"))).toBe("2026-10-04");
-  });
-
-  it("a las 00:30 de Bogotá ya es el día nuevo", () => {
-    expect(todayBogota(new Date("2026-10-05T00:30:00-05:00"))).toBe("2026-10-05");
-  });
-});
 
 describe("currencyOptions / fxNotice (R7.1, R7.3)", () => {
   it("solo COP y USD, las que acepta el API", () => {

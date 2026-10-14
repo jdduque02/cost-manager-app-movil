@@ -5,6 +5,7 @@ import { useOfflineQuery } from "@/hooks/useOfflineQuery";
 import * as transactionsApi from "@/api/transactions.api";
 import { getLocalTransactions } from "@/database/local.repository";
 import { formatCurrency } from "@/utils/format";
+import { todayInTimeZone, addDays, monthStart, lastDayOfPreviousMonth } from "@/utils/today";
 import { Card } from "@/components/ui/Card";
 import { Money } from "@/components/ui/Money";
 import { Badge } from "@/components/ui/Badge";
@@ -35,37 +36,26 @@ const GROUP_OPTIONS: { key: GroupBy; label: string }[] = [
   { key: "month", label: "Mes" },
 ];
 
-function getDateRange(preset: DatePreset): { date_from: string; date_to: string } {
-  const now = new Date();
-  const today = now.toISOString().split("T")[0];
+export function getDateRange(
+  preset: DatePreset,
+  timezone?: string,
+): { date_from: string; date_to: string } {
+  const today = todayInTimeZone(timezone);
 
   switch (preset) {
-    case "this_month": {
-      const first = new Date(now.getFullYear(), now.getMonth(), 1);
-      return { date_from: first.toISOString().split("T")[0], date_to: today };
-    }
+    case "this_month":
+      return { date_from: monthStart(today), date_to: today };
     case "last_month": {
-      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const last = new Date(now.getFullYear(), now.getMonth(), 0);
-      return { date_from: first.toISOString().split("T")[0], date_to: last.toISOString().split("T")[0] };
+      const last = lastDayOfPreviousMonth(today);
+      return { date_from: monthStart(last), date_to: last };
     }
-    case "last_7_days": {
-      const from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      return { date_from: from.toISOString().split("T")[0], date_to: today };
-    }
-    case "last_30_days": {
-      const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      return { date_from: from.toISOString().split("T")[0], date_to: today };
-    }
-    case "this_year": {
-      const first = new Date(now.getFullYear(), 0, 1);
-      return { date_from: first.toISOString().split("T")[0], date_to: today };
-    }
+    case "last_7_days":
+      return { date_from: addDays(today, -7), date_to: today };
+    case "this_year":
+      return { date_from: `${today.slice(0, 4)}-01-01`, date_to: today };
+    case "last_30_days":
     default:
-      return {
-        date_from: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-        date_to: today,
-      };
+      return { date_from: addDays(today, -30), date_to: today };
   }
 }
 
@@ -98,13 +88,6 @@ interface TransactionItem {
   type: string;
   currency?: string;
   transaction_date: string;
-}
-
-function startOfWeek(date: Date): Date {
-  const d = new Date(date);
-  const day = (d.getDay() + 6) % 7; // lunes = 0
-  d.setDate(d.getDate() - day);
-  return d;
 }
 
 /**
@@ -147,9 +130,9 @@ export async function buildLocalSummary(
       key = day;
       label = date.toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
     } else if (groupBy === "week") {
-      const monday = startOfWeek(date);
-      key = monday.toISOString().slice(0, 10);
-      label = monday.toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
+      const dow = (new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7; // lunes = 0
+      key = addDays(day, -dow);
+      label = new Date(`${key}T00:00:00`).toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
     } else {
       key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
       label = date.toLocaleDateString("es-CO", { month: "short", year: "numeric" });
@@ -185,7 +168,8 @@ export default function ReportsScreen() {
   const [preset, setPreset] = useState<DatePreset>("this_month");
   const [groupBy, setGroupBy] = useState<GroupBy>("month");
 
-  const dateRange = useMemo(() => getDateRange(preset), [preset]);
+  const timezone = useAuthStore((s) => s.user?.timezone);
+  const dateRange = useMemo(() => getDateRange(preset, timezone), [preset, timezone]);
 
   // Un resumen por moneda: la moneda va en la queryKey para que la caché de
   // COP y la de USD nunca se pisen ni se sumen.

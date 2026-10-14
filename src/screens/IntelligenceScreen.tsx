@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore } from "@/store/auth.store";
+import { todayInTimeZone, monthStart as monthStartOf } from "@/utils/today";
 import { useOfflineQuery } from "@/hooks/useOfflineQuery";
 import { apiClient } from "@/api/client";
 import * as transactionsApi from "@/api/transactions.api";
@@ -108,11 +109,9 @@ export default function IntelligenceScreen() {
     async () => null,
   );
 
-  const monthStart = useMemo(
-    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0],
-    [],
-  );
-  const today = useMemo(() => new Date().toISOString().split("T")[0], []);
+  const timezone = useAuthStore((s) => s.user?.timezone);
+  const today = useMemo(() => todayInTimeZone(timezone), [timezone]);
+  const monthStart = useMemo(() => monthStartOf(today), [today]);
 
   // Un resumen por moneda (la moneda va en la queryKey): tasa de ahorro y
   // presupuesto salen solo de COP; lo que haya en USD se muestra aparte.
