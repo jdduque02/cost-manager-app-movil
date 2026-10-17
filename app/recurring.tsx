@@ -276,7 +276,7 @@ export default function RecurringScreen() {
   );
 
   const { data: categories } = useOfflineQuery(
-    { queryKey: ["categories"], queryFn: catalogApi.getCategories, enabled },
+    { queryKey: ["categories", userId], queryFn: catalogApi.getCategories, enabled },
     () => localRepo.getLocalCategories(),
   );
   const { data: accounts } = useOfflineQuery(

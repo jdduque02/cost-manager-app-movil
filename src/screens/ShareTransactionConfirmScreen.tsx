@@ -70,7 +70,7 @@ export default function ShareTransactionConfirmScreen({
 
   const { data: categories } = useOfflineQuery(
     {
-      queryKey: ["categories"],
+      queryKey: ["categories", userId],
       queryFn: catalogApi.getCategories,
     },
     () => localRepo.getLocalCategories(),

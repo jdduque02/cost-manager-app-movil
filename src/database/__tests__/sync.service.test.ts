@@ -419,6 +419,44 @@ describe("syncPendingOperations", () => {
       expect(mockMarkFailed).toHaveBeenCalledWith(9, expect.stringMatching(/ya no existe/i), MAX_RETRIES);
       expect(mockDelete).not.toHaveBeenCalled();
     });
+
+    it("un UPDATE con 404 sin cuerpo JSON mantiene el texto 'ya no existe'", async () => {
+      mockGetPending.mockResolvedValueOnce([
+        { id: 9, entity: "transactions", operation: "UPDATE", localId: "40", retryCount: 0, lastError: null, payload: { userId: 1, id: 40, amount: 3 } },
+      ]);
+      (transactionsApi.updateTransaction as jest.Mock).mockRejectedValueOnce(
+        new AxiosError("status 404", "ERR_BAD_REQUEST", undefined, null, {
+          status: 404,
+          statusText: "",
+          data: "",
+          headers: {},
+          config: { headers: new AxiosHeaders() },
+        }),
+      );
+
+      await syncPendingOperations();
+
+      expect(mockMarkFailed).toHaveBeenCalledWith(9, expect.stringMatching(/ya no existe/i), MAX_RETRIES);
+    });
+
+    it("un UPDATE con 404 por category_id muestra el mensaje del API, no 'ya no existe'", async () => {
+      mockGetPending.mockResolvedValueOnce([
+        { id: 9, entity: "transactions", operation: "UPDATE", localId: "40", retryCount: 0, lastError: null, payload: { userId: 1, id: 40, category_id: 77 } },
+      ]);
+      (transactionsApi.updateTransaction as jest.Mock).mockRejectedValueOnce(
+        new AxiosError("status 404", "ERR_BAD_REQUEST", undefined, null, {
+          status: 404,
+          statusText: "",
+          data: { status: 404, message: "La categoría no existe o está inactiva", timestamp: "t" },
+          headers: {},
+          config: { headers: new AxiosHeaders() },
+        }),
+      );
+
+      await syncPendingOperations();
+
+      expect(mockMarkFailed).toHaveBeenCalledWith(9, "La categoría no existe o está inactiva", MAX_RETRIES);
+    });
   });
 
   it("retorna { synced: 0, failed: 0, skipped: 0 } si no hay operaciones", async () => {

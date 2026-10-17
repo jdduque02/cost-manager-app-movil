@@ -143,7 +143,7 @@ export default function IntelligenceScreen() {
   );
 
   const { data: categories, isLoading: catLoading } = useOfflineQuery(
-    { queryKey: ["categories"], queryFn: catalogApi.getCategories },
+    { queryKey: ["categories", userId], queryFn: catalogApi.getCategories },
     async () => [],
   );
 

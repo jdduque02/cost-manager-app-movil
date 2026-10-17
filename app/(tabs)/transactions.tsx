@@ -327,7 +327,7 @@ export default function TransactionsScreen() {
 
   const { data: categories } = useOfflineQuery(
     {
-      queryKey: ["categories"],
+      queryKey: ["categories", userId],
       queryFn: catalogApi.getCategories,
     },
     () => localRepo.getLocalCategories(),
