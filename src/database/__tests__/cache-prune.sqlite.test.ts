@@ -262,7 +262,11 @@ describe("categorías: snapshot del servidor e is_system", () => {
     db.raw.exec(`CREATE TABLE categories (id INTEGER PRIMARY KEY, name TEXT NOT NULL, icon_key TEXT, color_hex TEXT,
       group_type TEXT NOT NULL, sort_order INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, created_at TEXT,
       synced_at TEXT DEFAULT (datetime('now')));
-      INSERT INTO categories (id, name, group_type) VALUES (5, 'Vieja', 'expense');`);
+      INSERT INTO categories (id, name, group_type) VALUES (5, 'Vieja', 'expense');
+      CREATE TABLE subcategories (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, category_id INTEGER NOT NULL,
+        name TEXT NOT NULL, icon_key TEXT, color_hex TEXT, created_at TEXT, updated_at TEXT,
+        FOREIGN KEY (category_id) REFERENCES categories(id));
+      INSERT INTO subcategories (id, user_id, category_id, name) VALUES (1, 7, 5, 'Ref');`);
     const rows = await getLocalCategories();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ id: 5, is_system: true });

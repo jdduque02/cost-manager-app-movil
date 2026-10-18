@@ -265,11 +265,33 @@ async function initSchema(database: SQLite.SQLiteDatabase): Promise<void> {
  * las propias previas se ven como "Sistema" (dirección segura: bloquea editar/borrar)
  * y `clearLocalCategories`/`wipeLocalUserData` no las limpian (solo tocan `is_system = 0`).
  * No se cambia el default: no hay forma de saber cuál es propia.
+ *
+ * Como en la 1.5.0 el usuario podía crear categorías propias, las filas cacheadas
+ * entonces quedarían como "sistema" y sobrevivirían a un cambio de cuenta sin
+ * conexión. `categories` es solo caché (se repuebla en el primer GET en línea),
+ * así que SOLO al añadir la columna se borran las no referenciadas por
+ * transacciones, subcategorías, empresas ni la cola `pending_operations`; las
+ * referenciadas se conservan (FK y datos sin sincronizar). Idempotente: con la
+ * columna ya presente no hace nada, y en instalaciones nuevas nunca entra.
  */
 export async function migrateCategoriesTable(database: SQLite.SQLiteDatabase): Promise<void> {
   const columns = await database.getAllAsync<{ name: string }>("PRAGMA table_info(categories)");
   if (!columns.some((c) => c.name === "is_system")) {
-    await database.execAsync("ALTER TABLE categories ADD COLUMN is_system INTEGER DEFAULT 1");
+    await database.withTransactionAsync(async () => {
+      await database.execAsync("ALTER TABLE categories ADD COLUMN is_system INTEGER DEFAULT 1");
+      await database.execAsync(`
+        DELETE FROM categories
+        WHERE NOT EXISTS (SELECT 1 FROM transactions t WHERE t.category_id = categories.id)
+          AND NOT EXISTS (SELECT 1 FROM subcategories s WHERE s.category_id = categories.id)
+          AND NOT EXISTS (SELECT 1 FROM companies c WHERE c.default_category_id = categories.id)
+          AND NOT EXISTS (
+            SELECT 1 FROM pending_operations p
+            WHERE json_valid(p.payload)
+              AND (json_extract(p.payload, '$.category_id') = categories.id
+                OR json_extract(p.payload, '$.default_category_id') = categories.id)
+          )
+      `);
+    });
   }
 }
 
