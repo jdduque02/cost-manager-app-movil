@@ -15,6 +15,8 @@ export interface CreateTransferDto {
   reminder_days?: number;
   objective_id?: number;
   company_id?: number;
+  /** El móvil envía lo que ve el usuario; si falta, el API aplica la regla por tipo de cuenta (S3). Nunca con pasivo (S2). */
+  is_savings?: boolean;
 }
 
 export interface TransferMovement {
@@ -43,6 +45,7 @@ export interface TransferResponse {
   fixed_type?: FixedType | null;
   due_day?: number | null;
   reminder_days?: number | null;
+  is_savings: boolean;
   source: TransferMovement;
   destination: TransferMovement;
 }

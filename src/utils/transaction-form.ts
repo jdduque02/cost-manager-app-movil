@@ -6,6 +6,7 @@ import type {
   CreateTransactionRecordDto,
   TransactionRecordResponse,
 } from "@/types/transaction.types";
+import type { AccountType } from "@/types/banking.types";
 import { formatCurrency, formatRate } from "@/utils/format";
 
 /** Opciones de método de pago, mismo set y orden que TransactionDialog.tsx en la web. */
@@ -95,6 +96,27 @@ export function fxNotice(txCurrency?: string, productCurrency?: string): string 
   if (!txCurrency || !productCurrency || txCurrency === productCurrency) return null;
   if (!pair.includes(txCurrency) || !pair.includes(productCurrency)) return null;
   return `Se registrará en ${productCurrency} con la TRM oficial de la fecha`;
+}
+
+/** Tipos de cuenta de ahorro; copia de `src/shared/` del API, se mantienen iguales en los 3 repos. */
+export const SAVINGS_ACCOUNT_TYPES: readonly AccountType[] = [
+  "ahorro_alto_rendimiento",
+  "cdt",
+  "fna",
+  "aporte_pension_voluntaria",
+];
+
+const isSavingsType = (type: string) =>
+  (SAVINGS_ACCOUNT_TYPES as readonly string[]).includes(type.toLowerCase());
+
+/**
+ * Valor inicial de «Es ahorro» en una transferencia entre cuentas (RF-11):
+ * marcado si solo una de las dos es de ahorro (aporte o retiro). Sin las dos
+ * cuentas elegidas, desmarcado.
+ */
+export function defaultIsSavings(sourceType?: string, destType?: string): boolean {
+  if (!sourceType || !destType) return false;
+  return isSavingsType(sourceType) !== isSavingsType(destType);
 }
 
 /** Cierre de todo texto que muestra una conversión con TRM (ADR-013). */

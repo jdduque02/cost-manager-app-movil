@@ -10,6 +10,7 @@ import {
   fxNotice,
   inheritCurrency,
   convertedLine,
+  defaultIsSavings,
 } from "../transaction-form";
 
 describe("currencyOptions / fxNotice (R7.1, R7.3)", () => {
@@ -136,5 +137,20 @@ describe("transaction-form utils", () => {
       expect(validateFixedAndInstallments({ reminder_days: -1 })).toMatch(/recordatorio/);
       expect(validateFixedAndInstallments({ reminder_days: 31 })).toMatch(/recordatorio/);
     });
+  });
+});
+
+describe("defaultIsSavings (RF-11)", () => {
+  it.each([
+    ["corriente", "ahorro_alto_rendimiento", true],
+    ["ahorros", "cdt", true],
+    ["FNA", "corriente", true],
+    ["aporte_pension_voluntaria", "ahorros", true],
+    ["cdt", "fna", false],
+    ["ahorros", "corriente", false],
+    [undefined, "cdt", false],
+    ["cdt", undefined, false],
+  ])("%s → %s = %s", (src, dst, expected) => {
+    expect(defaultIsSavings(src, dst)).toBe(expected);
   });
 });
