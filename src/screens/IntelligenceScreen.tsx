@@ -42,7 +42,8 @@ interface TransactionSummaryByCategory {
 }
 
 interface TransactionSummary {
-  totals: { income: number; expenses: number; investments: number; count: number };
+  // `savings` falta en cachés (SQLite/Redis) de antes de T3: se lee como 0 (RF-14).
+  totals: { income: number; expenses: number; investments: number; count: number; savings?: number };
   by_category: TransactionSummaryByCategory[];
 }
 
@@ -129,7 +130,7 @@ export default function IntelligenceScreen() {
     enabled: !!userId,
   });
   const emptySummary = async (): Promise<TransactionSummary> => ({
-    totals: { income: 0, expenses: 0, investments: 0, count: 0 },
+    totals: { income: 0, expenses: 0, investments: 0, count: 0, savings: 0 },
     by_category: [],
   });
 
@@ -158,10 +159,15 @@ export default function IntelligenceScreen() {
 
   const isLoading = taxLoading || summaryLoading || catLoading || profileLoading;
 
-  const savingsRate =
-    monthSummary && monthSummary.totals.income > 0
-      ? ((monthSummary.totals.income - monthSummary.totals.expenses) / monthSummary.totals.income) * 100
-      : 0;
+  // Ahorro real: neto de transferencias marcadas como ahorro (aportes menos
+  // retiros, `totals.savings`). Capacidad: lo que
+  // sobra del ingreso. Sin ingresos, las dos son "—". Solo COP.
+  const totals = monthSummary?.totals;
+  const income = totals?.income ?? 0;
+  const realSavingsRate = totals && income > 0 ? ((totals.savings ?? 0) / income) * 100 : null;
+  const savingsCapacity = totals && income > 0 ? ((income - totals.expenses) / income) * 100 : null;
+  const pct = (n: number | null) => (n == null ? "—" : `${n.toFixed(1)}%`);
+  const tone = (n: number | null) => (n != null && n < 0 ? "text-destructive" : "text-primary");
 
   const topExpenseCategory = useMemo(() => {
     if (!monthSummary?.by_category.length) return null;
@@ -246,8 +252,12 @@ export default function IntelligenceScreen() {
               </>
             )}
             <View className="flex-row justify-between">
-              <Text className="text-sm font-sans text-foreground">Tasa de ahorro</Text>
-              <Text className="text-sm font-num-semibold text-primary">{savingsRate.toFixed(1)}%</Text>
+              <Text className="text-sm font-sans text-foreground">Ahorro real</Text>
+              <Text className={`text-sm font-num-semibold ${tone(realSavingsRate)}`}>{pct(realSavingsRate)}</Text>
+            </View>
+            <View className="flex-row justify-between">
+              <Text className="text-sm font-sans text-foreground">Capacidad de ahorro</Text>
+              <Text className={`text-sm font-num-semibold ${tone(savingsCapacity)}`}>{pct(savingsCapacity)}</Text>
             </View>
             <View className="flex-row justify-between items-center">
               <Text className="text-sm font-sans text-foreground">Mayor gasto</Text>
