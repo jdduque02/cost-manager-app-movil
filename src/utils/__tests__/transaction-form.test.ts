@@ -6,22 +6,12 @@ import {
   setPatrimony,
   validateFixedAndInstallments,
   LIABILITY_LINK_HINT,
-  todayBogota,
   TX_CURRENCIES,
   fxNotice,
   inheritCurrency,
   convertedLine,
+  defaultIsSavings,
 } from "../transaction-form";
-
-describe("todayBogota (R7.7)", () => {
-  it("a las 20:00 de Bogotá (01:00 UTC del día siguiente) sigue siendo hoy", () => {
-    expect(todayBogota(new Date("2026-10-04T20:00:00-05:00"))).toBe("2026-10-04");
-  });
-
-  it("a las 00:30 de Bogotá ya es el día nuevo", () => {
-    expect(todayBogota(new Date("2026-10-05T00:30:00-05:00"))).toBe("2026-10-05");
-  });
-});
 
 describe("currencyOptions / fxNotice (R7.1, R7.3)", () => {
   it("solo COP y USD, las que acepta el API", () => {
@@ -147,5 +137,20 @@ describe("transaction-form utils", () => {
       expect(validateFixedAndInstallments({ reminder_days: -1 })).toMatch(/recordatorio/);
       expect(validateFixedAndInstallments({ reminder_days: 31 })).toMatch(/recordatorio/);
     });
+  });
+});
+
+describe("defaultIsSavings (RF-11)", () => {
+  it.each([
+    ["corriente", "ahorro_alto_rendimiento", true],
+    ["ahorros", "cdt", true],
+    ["FNA", "corriente", true],
+    ["aporte_pension_voluntaria", "ahorros", true],
+    ["cdt", "fna", false],
+    ["ahorros", "corriente", false],
+    [undefined, "cdt", false],
+    ["cdt", undefined, false],
+  ])("%s → %s = %s", (src, dst, expected) => {
+    expect(defaultIsSavings(src, dst)).toBe(expected);
   });
 });

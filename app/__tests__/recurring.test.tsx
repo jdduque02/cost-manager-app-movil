@@ -322,3 +322,43 @@ it("en la transferencia la cuenta destino no aparece como origen", async () => {
   expect(await screen.findByText("Bancolombia ****1234")).toBeTruthy();
   expect(screen.queryByText("Davivienda ****5678")).toBeNull();
 });
+
+describe("editar la próxima fecha", () => {
+  async function openEdit(r: RecurringTransaction) {
+    (recurringApi.listRecurring as jest.Mock).mockResolvedValue([r]);
+    (recurringApi.updateRecurring as jest.Mock).mockResolvedValue(r);
+    renderWithClient(<RecurringScreen />);
+    fireEvent.press(await screen.findByLabelText("Editar Arriendo"));
+  }
+  const dueInput = () => screen.getByDisplayValue(/^\d{4}-\d{2}-\d{2}$/);
+
+  it("se precarga con next_due_date y, sin cambiarla, no se envía (regla atrasada)", async () => {
+    await openEdit(rule({ next_due_date: "2020-01-01" }));
+    expect(screen.getByText("Próxima fecha (AAAA-MM-DD)")).toBeTruthy();
+    expect(dueInput().props.value).toBe("2020-01-01");
+    fireEvent.press(screen.getByText("Guardar"));
+
+    await waitFor(() => expect(recurringApi.updateRecurring).toHaveBeenCalled());
+    expect((recurringApi.updateRecurring as jest.Mock).mock.calls[0][2]).not.toHaveProperty("next_due_date");
+  });
+
+  it("cambiada a una fecha válida se envía como next_due_date", async () => {
+    await openEdit(rule());
+    fireEvent.changeText(dueInput(), "2099-01-15");
+    fireEvent.press(screen.getByText("Guardar"));
+
+    await waitFor(() =>
+      expect(recurringApi.updateRecurring).toHaveBeenCalledWith(7, 1, expect.objectContaining({ next_due_date: "2099-01-15" })),
+    );
+  });
+
+  it.each([["2000-01-01"], ["15/01/2099"], [""]])("la fecha inválida %p no llama al API", async (value) => {
+    const { toast } = jest.requireMock("@/utils/toast");
+    await openEdit(rule());
+    fireEvent.changeText(dueInput(), value);
+    fireEvent.press(screen.getByText("Guardar"));
+
+    expect(toast.error).toHaveBeenCalledWith("Revisa el formulario", expect.stringContaining("próxima fecha"));
+    expect(recurringApi.updateRecurring).not.toHaveBeenCalled();
+  });
+});

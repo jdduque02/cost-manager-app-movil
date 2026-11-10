@@ -1,4 +1,4 @@
-import { View, Text, Modal, ScrollView, Alert } from "react-native";
+import { View, Text, Modal, ScrollView, Alert, Switch } from "react-native";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/Button";
@@ -10,7 +10,11 @@ import * as transfersApi from "@/api/transfers.api";
 import { apiErrorMessage } from "@/api/client";
 import type { BankAccountResponse, FinancialLiabilityResponse } from "@/types/banking.types";
 import type { CreateTransferDto } from "@/types/transfer.types";
-import { todayBogota, fxNotice } from "@/utils/transaction-form";
+import { defaultIsSavings, fxNotice } from "@/utils/transaction-form";
+import { todayInTimeZone } from "@/utils/today";
+import { useAuthStore } from "@/store/auth.store";
+import { useAppTheme } from "@/components/ThemeProvider";
+import { PALETTE } from "@/theme/palette";
 
 type DestinationKind = "account" | "liability";
 
@@ -50,7 +54,10 @@ export function TransferModal({
   const [destinationLiabilityId, setDestinationLiabilityId] = useState<number | undefined>();
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
-  const [date, setDate] = useState(todayBogota());
+  const [isSavings, setIsSavings] = useState(false);
+  const c = PALETTE[useAppTheme().resolvedScheme];
+  const timezone = useAuthStore((s) => s.user?.timezone);
+  const [date, setDate] = useState(() => todayInTimeZone(timezone));
 
   const destinationAccounts = bankAccounts.filter((a) => a.id !== sourceAccountId);
   // El monto va en la moneda del origen; si el destino es la otra del par, el
@@ -61,6 +68,7 @@ export function TransferModal({
       ? bankAccounts.find((a) => a.id === destinationAccountId)?.currency
       : liabilities.find((l) => l.id === destinationLiabilityId)?.currency;
   const notice = fxNotice(sourceCurrency, destinationCurrency);
+  const typeOf = (id?: number) => bankAccounts.find((a) => a.id === id)?.account_type;
 
   /**
    * Cambiar la cuenta de origen a la que ya estaba elegida como destino debe
@@ -69,10 +77,18 @@ export function TransferModal({
    * `destinationAccountId` quedaba en un valor ya no visible ni válido.
    */
   function handleSelectSource(id: number) {
+    if (id === sourceAccountId) return; // re-tocar el chip no borra la marca manual
     setSourceAccountId(id);
-    if (destinationAccountId === id) {
-      setDestinationAccountId(undefined);
-    }
+    const destinationId = destinationAccountId === id ? undefined : destinationAccountId;
+    setDestinationAccountId(destinationId);
+    setIsSavings(defaultIsSavings(typeOf(id), typeOf(destinationId)));
+  }
+
+  /** RF-11: al elegir el destino se recalcula la marca; el usuario puede cambiarla después. */
+  function handleSelectDestinationAccount(id: number) {
+    if (id === destinationAccountId) return;
+    setDestinationAccountId(id);
+    setIsSavings(defaultIsSavings(typeOf(sourceAccountId), typeOf(id)));
   }
 
   function reset() {
@@ -82,7 +98,8 @@ export function TransferModal({
     setDestinationLiabilityId(undefined);
     setAmount("");
     setDescription("");
-    setDate(todayBogota());
+    setIsSavings(false);
+    setDate(todayInTimeZone(timezone));
   }
 
   const createMutation = useMutation({
@@ -122,7 +139,7 @@ export function TransferModal({
     createMutation.mutate({
       source_account_id: sourceAccountId,
       ...(destinationKind === "account"
-        ? { destination_account_id: destinationAccountId }
+        ? { destination_account_id: destinationAccountId, is_savings: isSavings }
         : { destination_liability_id: destinationLiabilityId }),
       amount: parsedAmount,
       transaction_date: date || undefined,
@@ -180,7 +197,7 @@ export function TransferModal({
                       key={a.id}
                       label={`${a.bank_name} ${a.masked_account_number} · ${a.currency}`}
                       selected={destinationAccountId === a.id}
-                      onPress={() => setDestinationAccountId(a.id)}
+                      onPress={() => handleSelectDestinationAccount(a.id)}
                       className="mr-2"
                     />
                   ))
@@ -194,6 +211,23 @@ export function TransferModal({
                     />
                   ))}
             </ScrollView>
+
+            <View className="flex-row items-center justify-between gap-3 mb-4">
+              <View className="flex-1">
+                <Text className="text-foreground font-sans text-sm">Es ahorro</Text>
+                <Text className="text-muted-foreground font-sans text-xs mt-0.5">
+                  Cuenta en tu porcentaje de ahorro real
+                </Text>
+              </View>
+              <Switch
+                accessibilityRole="switch"
+                accessibilityLabel="Es ahorro"
+                value={destinationKind === "account" && isSavings}
+                onValueChange={setIsSavings}
+                disabled={destinationKind === "liability" || !sourceAccountId || !destinationAccountId}
+                trackColor={{ false: c.muted, true: c.primary }}
+              />
+            </View>
 
             <CurrencyInput
               label={sourceCurrency ? `Monto (${sourceCurrency})` : "Monto"}

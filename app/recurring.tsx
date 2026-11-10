@@ -120,6 +120,8 @@ interface FormState {
   destLiabilityId?: number;
   frequency: RecurringFrequency;
   startDate: string;
+  /** Solo en edición: precargada con la `next_due_date` de la regla. */
+  nextDueDate: string;
   mode: RecurringMode;
   reminderDays: string;
   endKind: EndKind;
@@ -135,6 +137,7 @@ function emptyForm(): FormState {
     link: "account",
     frequency: "monthly",
     startDate: today(),
+    nextDueDate: "",
     mode: "confirm",
     reminderDays: "1",
     endKind: "none",
@@ -158,6 +161,7 @@ function formFromRule(r: RecurringTransaction): FormState {
     destLiabilityId: r.destination_liability_id ?? undefined,
     frequency: r.frequency,
     startDate: r.start_date,
+    nextDueDate: r.next_due_date,
     mode: r.mode,
     reminderDays: String(r.reminder_days),
     endKind: r.end_date ? "date" : r.max_occurrences ? "count" : "none",
@@ -213,13 +217,21 @@ function toCreateDto(f: FormState): string | CreateRecurringTransactionDto {
   };
 }
 
-/** Sin `type`, `frequency`, `start_date` ni destinos: el API responde 400 si llegan. */
+/**
+ * Sin `type`, `frequency`, `start_date` ni destinos: el API responde 400 si llegan.
+ * `next_due_date` solo viaja si el usuario la cambió: el API rechaza una anterior a hoy
+ * y una regla atrasada tiene la suya vencida.
+ */
 function toUpdateDto(f: FormState, rule: RecurringTransaction): string | UpdateRecurringTransactionDto {
   const fields = commonFields(f);
   if (typeof fields === "string") return fields;
+  const dueChanged = f.nextDueDate !== rule.next_due_date;
+  if (dueChanged && !/^\d{4}-\d{2}-\d{2}$/.test(f.nextDueDate)) return "La próxima fecha debe ser AAAA-MM-DD";
+  if (dueChanged && f.nextDueDate < today()) return "La próxima fecha no puede ser anterior a hoy";
   // Excluyentes: el que no aplica va en `null`; ambos en `null` dejan la regla sin fin.
   const common = {
     ...fields,
+    ...(dueChanged ? { next_due_date: f.nextDueDate } : {}),
     end_date: f.endKind === "date" ? f.endDate : null,
     max_occurrences: f.endKind === "count" ? parseInt(f.maxOccurrences, 10) : null,
   };
@@ -276,7 +288,7 @@ export default function RecurringScreen() {
   );
 
   const { data: categories } = useOfflineQuery(
-    { queryKey: ["categories"], queryFn: catalogApi.getCategories, enabled },
+    { queryKey: ["categories", userId], queryFn: catalogApi.getCategories, enabled },
     () => localRepo.getLocalCategories(),
   );
   const { data: accounts } = useOfflineQuery(
@@ -619,6 +631,14 @@ export default function RecurringScreen() {
                     onChangeText={(v) => set("startDate", v)}
                   />
                 </>
+              )}
+
+              {editing && (
+                <Input
+                  label="Próxima fecha (AAAA-MM-DD)"
+                  value={form.nextDueDate}
+                  onChangeText={(v) => set("nextDueDate", v)}
+                />
               )}
 
               {label("Modo")}

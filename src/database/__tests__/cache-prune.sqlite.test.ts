@@ -11,8 +11,10 @@ import * as SQLite from "expo-sqlite";
 import { closeDatabase } from "../database.service";
 import {
   createLocalBankAccount,
+  clearLocalCategories,
   createLocalCompany,
   getCachedIds,
+  getLocalCategories,
   getLocalBankAccounts,
   getLocalCompanies,
   getLocalFinancialAssets,
@@ -98,8 +100,8 @@ const account = (id: number, user_id = USER) =>
 const company = (id: number) =>
   ({ id, user_id: USER, name: `Empresa ${id}`, default_category_id: null, created_at: "", updated_at: "" }) as EmpresaResponse;
 
-const category = (id: number) =>
-  ({ id, name: `Cat ${id}`, icon_key: null, color_hex: null, group_type: "expense", sort_order: 0, is_active: true, created_at: "" }) as CategoryResponse;
+const category = (id: number, is_system = true) =>
+  ({ id, name: `Cat ${id}`, icon_key: null, color_hex: null, group_type: "expense", sort_order: 0, is_active: true, is_system, created_at: "" }) as CategoryResponse;
 
 const sub = (id: number, category_id = 1) =>
   ({ id, user_id: USER, category_id, name: `Sub ${id}`, icon_key: null, color_hex: null, created_at: "", updated_at: "" }) as SubcategoryResponse;
@@ -196,5 +198,77 @@ describe("poda del caché tras un fetch completo", () => {
 
     expect(ids(await getLocalFinancialAssets(USER))).toEqual([1]);
     expect(await getLocalFinancialLiabilities(USER)).toEqual([]);
+  });
+});
+
+describe("categorías: snapshot del servidor e is_system", () => {
+  it("persiste is_system y lo devuelve como booleano", async () => {
+    await saveCategories([category(1, true), category(2, false)]);
+    const rows = await getLocalCategories();
+    expect(rows.find((r) => r.id === 1)?.is_system).toBe(true);
+    expect(rows.find((r) => r.id === 2)?.is_system).toBe(false);
+  });
+
+  it("snapshot completo: borra desactivadas/ajenas que el servidor ya no devuelve", async () => {
+    await saveCategories([category(1), category(2), category(3, false)]);
+    await saveCategories([category(1), category(2)], true);
+    expect(ids(await getLocalCategories())).toEqual([1, 2]);
+    expect(db.raw.prepare("SELECT COUNT(*) AS n FROM categories").get()).toEqual({ n: 2 });
+  });
+
+  it("lote parcial (sin snapshot) no poda", async () => {
+    await saveCategories([category(1), category(2)]);
+    await saveCategories([category(3, false)]);
+    expect(ids(await getLocalCategories())).toEqual([1, 2, 3]);
+  });
+
+  it("array vacío no vacía la caché aunque se marque snapshot", async () => {
+    await saveCategories([category(1), category(2)]);
+    await saveCategories([], true);
+    expect(ids(await getLocalCategories())).toEqual([1, 2]);
+  });
+
+  it("una categoría aún referenciada por una subcategoría local queda oculta, no rompe el FK", async () => {
+    await saveCategories([category(1), category(2)]);
+    await saveSubcategories([sub(1, 2)]);
+    await saveCategories([category(1)], true);
+    expect(ids(await getLocalCategories())).toEqual([1]);
+    expect(db.raw.prepare("SELECT COUNT(*) AS n FROM categories").get()).toEqual({ n: 2 });
+  });
+
+  it("clearLocalCategories descarta solo las propias, conserva las de sistema y la cola pending_operations", async () => {
+    await saveCategories([category(1), category(2, false)]);
+    await createLocalBankAccount(USER, offlineAccountDto);
+    await clearLocalCategories();
+    // Un invitado post-logout (sin token, sin refetch) sigue viendo el catálogo global.
+    expect(ids(await getLocalCategories())).toEqual([1]);
+    expect(db.raw.prepare("SELECT COUNT(*) AS n FROM categories").get()).toEqual({ n: 1 });
+    expect(await getPendingOperations()).toHaveLength(1);
+  });
+
+  it("clearLocalCategories: una propia aún referenciada por FK queda oculta (is_active = 0), no se rompe", async () => {
+    await saveCategories([category(1), category(2, false), category(3, false)]);
+    await saveSubcategories([sub(1, 2)]);
+    await clearLocalCategories();
+    expect(ids(await getLocalCategories())).toEqual([1]);
+    // 3 se borra; 2 sigue en la tabla pero inactiva porque la subcategoría la referencia.
+    expect(db.raw.prepare("SELECT id, is_active FROM categories ORDER BY id").all()).toEqual([
+      { id: 1, is_active: 1 },
+      { id: 2, is_active: 0 },
+    ]);
+  });
+
+  it("migra una tabla categories sin is_system sin perder filas", async () => {
+    db.raw.exec(`CREATE TABLE categories (id INTEGER PRIMARY KEY, name TEXT NOT NULL, icon_key TEXT, color_hex TEXT,
+      group_type TEXT NOT NULL, sort_order INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, created_at TEXT,
+      synced_at TEXT DEFAULT (datetime('now')));
+      INSERT INTO categories (id, name, group_type) VALUES (5, 'Vieja', 'expense');
+      CREATE TABLE subcategories (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, category_id INTEGER NOT NULL,
+        name TEXT NOT NULL, icon_key TEXT, color_hex TEXT, created_at TEXT, updated_at TEXT,
+        FOREIGN KEY (category_id) REFERENCES categories(id));
+      INSERT INTO subcategories (id, user_id, category_id, name) VALUES (1, 7, 5, 'Ref');`);
+    const rows = await getLocalCategories();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: 5, is_system: true });
   });
 });
