@@ -12,6 +12,7 @@ import { useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/auth.store";
 import * as catalogApi from "@/api/catalog.api";
+import { apiErrorMessage } from "@/api/client";
 import * as localRepo from "@/database/local.repository";
 import { useOfflineQuery } from "@/hooks/useOfflineQuery";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -106,7 +107,7 @@ export default function CategoriesScreen() {
     refetch: refetchCategories,
   } = useOfflineQuery(
     {
-      queryKey: ["categories"],
+      queryKey: ["categories", userId],
       queryFn: catalogApi.getCategories,
     },
     () => localRepo.getLocalCategories(),
@@ -167,8 +168,8 @@ export default function CategoriesScreen() {
               setCategoryForm({ name: "", icon_key: "", color_hex: "", type: "expense" });
               queryClient.invalidateQueries({ queryKey: ["categories"] });
               toast.success("Categoría creada");
-            } catch {
-              toast.error("No se pudo crear la categoría");
+            } catch (err) {
+              toast.error(apiErrorMessage(err, "No se pudo crear la categoría"));
             }
           },
         },
@@ -303,6 +304,8 @@ export default function CategoriesScreen() {
                 <Text className="flex-1 text-sm font-sans-medium text-foreground">
                   {item.name}
                 </Text>
+                {/* Solo-lectura: esta pantalla no edita ni borra; el badge marca el catálogo global. */}
+                {item.is_system === true && <Badge tone="muted">Sistema</Badge>}
                 <Badge tone={TYPE_TONE[item.group_type]}>{TYPE_LABELS[item.group_type]}</Badge>
                 <ChevronRight size={16} color={PALETTE[resolvedScheme].mutedForeground} />
               </View>

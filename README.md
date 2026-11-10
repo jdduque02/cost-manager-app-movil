@@ -59,6 +59,10 @@ src/
 
    > Usa la IP local de tu máquina (no `localhost`) al probar en dispositivo físico o emulador Android.
 
+   > El repo no versiona `.env`. En la máquina de despliegue puede quedar un `.env` apuntando a
+   > **producción** (`https://api.sprig.fans/api/v1`). Verifícalo antes de arrancar: para desarrollo
+   > local usa `.env.local` (tiene prioridad y no se versiona) o exporta `API_BASE_URL` en la sesión.
+
 2. Instala dependencias:
 
    ```bash

@@ -252,19 +252,19 @@ describe("datos sensibles en SQLite", () => {
     expect(op.payload.account_number).toBe("1234567890");
   });
 
-  it("wipeLocalUserData borra datos del usuario y la cola, pero conserva el catálogo de categorías", async () => {
-    await saveCategories([
-      {
-        id: 1,
-        name: "Comida",
-        icon_key: null,
-        color_hex: null,
-        group_type: "expense",
-        sort_order: 0,
-        is_active: true,
-        created_at: "x",
-      },
-    ]);
+  it("wipeLocalUserData borra datos del usuario y la cola, y las categorías propias; conserva las de sistema", async () => {
+    const cat = (id: number, is_system: boolean) => ({
+      id,
+      name: "Cat",
+      icon_key: null,
+      color_hex: null,
+      group_type: "expense" as const,
+      sort_order: 0,
+      is_active: true,
+      is_system,
+      created_at: "x",
+    });
+    await saveCategories([cat(1, true), cat(2, false)]);
     await createLocalTransaction(USER, txDto);
     await saveTransactions([serverTx(9)]);
 
@@ -272,7 +272,7 @@ describe("datos sensibles en SQLite", () => {
 
     expect(await getLocalTransactions(USER)).toEqual([]);
     expect(await getPendingOperations()).toEqual([]);
-    expect(db.raw.prepare("SELECT COUNT(*) AS n FROM categories").get()).toEqual({ n: 1 });
+    expect(db.raw.prepare("SELECT id FROM categories").all()).toEqual([{ id: 1 }]);
   });
 });
 

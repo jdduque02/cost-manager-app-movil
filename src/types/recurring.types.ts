@@ -70,7 +70,11 @@ export interface CreateRecurringTransactionDto {
   reminder_days?: number;
 }
 
-/** `type`, `frequency`, `start_date` y destinos de transferencia no se editan (400). */
+/**
+ * `type`, `frequency`, `start_date` y destinos de transferencia no se editan (400).
+ * `next_due_date` (`YYYY-MM-DD`) sí: el API da 400 si es anterior a hoy, <= la última
+ * ocurrencia generada o posterior a `end_date`; 409 si la regla no está activa.
+ */
 export type UpdateRecurringTransactionDto = Partial<
   Omit<
     CreateRecurringTransactionDto,
@@ -94,6 +98,7 @@ export type UpdateRecurringTransactionDto = Partial<
   liability_id?: number | null;
   end_date?: string | null;
   max_occurrences?: number | null;
+  next_due_date?: string;
 };
 
 export interface RecurringProcessResult {

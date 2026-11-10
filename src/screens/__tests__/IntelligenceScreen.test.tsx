@@ -20,17 +20,19 @@ jest.mock("react-native-safe-area-context", () => ({
 }));
 
 const mockUseOfflineQuery = useOfflineQuery as jest.Mock;
-const summary = (income: number, expenses: number, count: number) => ({
-  totals: { income, expenses, investments: 0, count },
+// Sin `savings` imita un resumen cacheado antes de T3 (RF-14).
+const summary = (income: number, expenses: number, count: number, savings?: number) => ({
+  totals: { income, expenses, investments: 0, count, ...(savings === undefined ? {} : { savings }) },
   by_category: [],
 });
+const cop = summary(2000000, 500000, 4);
 
-function setup(usd: ReturnType<typeof summary>) {
+function setup(usd: ReturnType<typeof summary>, copSummary = cop) {
   const keys: unknown[][] = [];
   mockUseOfflineQuery.mockImplementation((options: { queryKey: unknown[] }) => {
     keys.push(options.queryKey);
     if (options.queryKey[0] !== "intelligence-month-summary") return { data: null, isLoading: false };
-    return { data: options.queryKey.includes("USD") ? usd : summary(2000000, 500000, 4), isLoading: false };
+    return { data: options.queryKey.includes("USD") ? usd : copSummary, isLoading: false };
   });
   render(<IntelligenceScreen />);
   return keys;
@@ -52,11 +54,46 @@ it("pide COP y USD por separado y muestra los totales en USD aparte", () => {
   expect(screen.getByText(formatCurrency(2000000))).toBeTruthy();
   expect(screen.getByText(formatCurrency(300, "USD"))).toBeTruthy();
   expect(screen.getByText(formatCurrency(45.5, "USD"))).toBeTruthy();
-  // La tasa de ahorro sale solo de COP: (2.000.000 - 500.000) / 2.000.000.
-  expect(screen.getByText("75.0%")).toBeTruthy();
+  // La capacidad de ahorro sale solo de COP: (2.000.000 - 500.000) / 2.000.000.
+  expect(rates()).toEqual(["0.0%", "75.0%"]);
 });
 
 it("sin movimientos en USD no muestra filas en dólares", () => {
   setup(summary(0, 0, 0));
   expect(screen.queryByText("Ingresos (USD)")).toBeNull();
+});
+
+// [Ahorro real, Capacidad de ahorro], en orden de pantalla.
+const rates = () => screen.getAllByText(/^(-?\d+\.\d%|—)$/).map((n) => n.props.children);
+const none = summary(0, 0, 0);
+
+it("muestra el ahorro real y la capacidad de ahorro", () => {
+  setup(none, summary(2000000, 500000, 4, 300000));
+  expect(screen.getByText("Ahorro real")).toBeTruthy();
+  expect(screen.getByText("Capacidad de ahorro")).toBeTruthy();
+  expect(rates()).toEqual(["15.0%", "75.0%"]);
+  expect(screen.getByText("15.0%").props.className).not.toContain("text-destructive");
+});
+
+it("el ahorro real negativo se ve con signo y en rojo", () => {
+  setup(none, summary(2000000, 500000, 4, -100000));
+  expect(rates()).toEqual(["-5.0%", "75.0%"]);
+  expect(screen.getByText("-5.0%").props.className).toContain("text-destructive");
+});
+
+it("gastos mayores que los ingresos dan capacidad negativa en rojo", () => {
+  setup(none, summary(1000000, 1500000, 3, 0));
+  expect(rates()).toEqual(["0.0%", "-50.0%"]);
+  expect(screen.getByText("-50.0%").props.className).toContain("text-destructive");
+  expect(screen.getByText("0.0%").props.className).not.toContain("text-destructive");
+});
+
+it("sin ingresos las dos tasas son «—»", () => {
+  setup(none, summary(0, 50000, 1, 0));
+  expect(rates()).toEqual(["—", "—"]);
+});
+
+it("un resumen cacheado sin `savings` da ahorro real 0.0% (RF-14)", () => {
+  setup(none, cop);
+  expect(rates()).toEqual(["0.0%", "75.0%"]);
 });

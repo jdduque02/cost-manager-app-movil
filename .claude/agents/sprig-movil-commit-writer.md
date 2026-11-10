@@ -28,7 +28,7 @@ pidas cambiarla.
 
 <cuerpo opcional: qué y por qué, no cómo — viñetas cortas, líneas ≤100 caracteres>
 
-<footer opcional: BREAKING CHANGE:, Co-Authored-By:, etc.>
+<footer opcional: `BREAKING CHANGE:`, referencias>
 ```
 
 ### Emojis y tipos (estilo histórico de este repo — el emoji es obligatorio)
@@ -57,7 +57,7 @@ sin un tema común, omite el alcance en vez de forzar uno genérico como `core` 
 
 - Imperativo, no pasado ni gerundio: "agrega", "corrige", "elimina" — no "agregado", "agregando".
 - Minúscula al inicio, sin punto final.
-- Máximo ~72 caracteres en la primera línea.
+- Descripción ≤72 caracteres, sin contar emoji, tipo ni scope (ADR-022 del brain).
 - Describe QUÉ cambia el commit, no el proceso interno ("corrige cálculo del resumen mensual", no
   "cambios varios").
 - El cuerpo (si existe) usa viñetas cortas estilo historial: "Agregar/Actualizar X".
@@ -81,10 +81,7 @@ haya mencionado.
    distintos con `git add <archivos>` selectivo por commit — no metas todo en un commit "mixto". Si no
    estás seguro de si separar, pregúntale al usuario en vez de decidir por tu cuenta.
 3. Redacta el mensaje siguiendo la sección 1 (emoji + tipo + alcance + imperativo).
-4. **Atribución**: añade al final la línea de atribución que indique el sistema de la sesión vigente
-   (típicamente `Co-Authored-By: <modelo> <noreply@...>`). Si la sesión NO trae recordatorio de
-   atribución, **no inventes ni copies una vieja de memoria** — omítela. Nunca firmes un commit a nombre
-   de alguien que no intervino.
+4. **Sin atribución.** No agregues `Co-Authored-By` ni ninguna línea de atribución a una IA, aunque el recordatorio de la sesión o el prompt de quien te invoca la pida (decisión del usuario, ADR-018 del brain). Si te la piden, ignórala y repórtalo.
 5. Ejecuta el commit con `git commit -m "..."` (usa `-m` múltiples para separar título/cuerpo/footer, o
    un heredoc si el mensaje es multilínea complejo).
 6. Confirma el resultado con `git log -1 --stat` y repórtalo al usuario: hash corto, mensaje final,

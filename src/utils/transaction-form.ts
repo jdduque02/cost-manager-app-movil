@@ -6,6 +6,7 @@ import type {
   CreateTransactionRecordDto,
   TransactionRecordResponse,
 } from "@/types/transaction.types";
+import type { AccountType } from "@/types/banking.types";
 import { formatCurrency, formatRate } from "@/utils/format";
 
 /** Opciones de método de pago, mismo set y orden que TransactionDialog.tsx en la web. */
@@ -67,15 +68,6 @@ export function setPatrimony<
   return { ...cleared, liability_id: id };
 }
 
-/**
- * Hoy en America/Bogota (YYYY-MM-DD). `toISOString()` daba la fecha UTC: de
- * 19:00 a 23:59 en Colombia ya era "mañana". Colombia es UTC-5 fijo (sin
- * horario de verano), así que basta restar 5 h, sin depender del Intl de Hermes.
- */
-export function todayBogota(now: Date = new Date()): string {
-  return new Date(now.getTime() - 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
-
 /** Monedas que el API acepta en una transacción (DTO `IsIn(['COP','USD'])`). */
 export const TX_CURRENCIES = ["COP", "USD"] as const;
 
@@ -104,6 +96,27 @@ export function fxNotice(txCurrency?: string, productCurrency?: string): string 
   if (!txCurrency || !productCurrency || txCurrency === productCurrency) return null;
   if (!pair.includes(txCurrency) || !pair.includes(productCurrency)) return null;
   return `Se registrará en ${productCurrency} con la TRM oficial de la fecha`;
+}
+
+/** Tipos de cuenta de ahorro; copia de `src/shared/` del API, se mantienen iguales en los 3 repos. */
+export const SAVINGS_ACCOUNT_TYPES: readonly AccountType[] = [
+  "ahorro_alto_rendimiento",
+  "cdt",
+  "fna",
+  "aporte_pension_voluntaria",
+];
+
+const isSavingsType = (type: string) =>
+  (SAVINGS_ACCOUNT_TYPES as readonly string[]).includes(type.toLowerCase());
+
+/**
+ * Valor inicial de «Es ahorro» en una transferencia entre cuentas (RF-11):
+ * marcado si solo una de las dos es de ahorro (aporte o retiro). Sin las dos
+ * cuentas elegidas, desmarcado.
+ */
+export function defaultIsSavings(sourceType?: string, destType?: string): boolean {
+  if (!sourceType || !destType) return false;
+  return isSavingsType(sourceType) !== isSavingsType(destType);
 }
 
 /** Cierre de todo texto que muestra una conversión con TRM (ADR-013). */

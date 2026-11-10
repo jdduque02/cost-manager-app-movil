@@ -49,3 +49,22 @@ it("sin monto hereda la moneda de la cuenta inferida", () => {
   expect(screen.getByRole("button", { name: "USD", selected: true })).toBeTruthy();
   expect(screen.queryByText(NOTICE)).toBeNull();
 });
+
+it("el selector ofrece las categorías del sistema y las propias, con la queryKey atada al usuario", () => {
+  const categories = [
+    { id: 1, name: "Alimentación", is_system: true, is_active: true },
+    { id: 90, name: "Mascotas", is_system: false, is_active: true },
+  ];
+  (useOfflineQuery as jest.Mock).mockImplementation((opts: { queryKey: unknown[] }) => ({
+    data: opts.queryKey[0] === "categories" ? categories : [],
+  }));
+
+  render(<ShareTransactionConfirmScreen sharedText="Compra por $5.000 en tienda" />);
+
+  expect(screen.getByText("Alimentación")).toBeTruthy();
+  expect(screen.getByText("Mascotas")).toBeTruthy();
+  expect(useOfflineQuery).toHaveBeenCalledWith(
+    expect.objectContaining({ queryKey: ["categories", 7] }),
+    expect.any(Function),
+  );
+});

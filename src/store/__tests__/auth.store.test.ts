@@ -13,6 +13,7 @@ import {
   cacheUser,
   getCachedUser,
   clearCachedUser,
+  clearLocalCategories,
   migrateGuestDataToUser,
   wipeGuestData,
   GUEST_USER_ID,
@@ -35,6 +36,7 @@ jest.mock("@/database/local.repository", () => ({
   cacheUser: jest.fn(),
   getCachedUser: jest.fn(),
   clearCachedUser: jest.fn(),
+  clearLocalCategories: jest.fn().mockResolvedValue(undefined),
   migrateGuestDataToUser: jest.fn(),
   wipeGuestData: jest.fn(),
   GUEST_USER_ID: -1,
@@ -351,6 +353,7 @@ describe("logout", () => {
     expect(mockClearCachedUser).toHaveBeenCalled();
     expect(mockSecureStoreDeleteItem).toHaveBeenCalledWith("guest_mode_active_v1");
     expect(mockWipeGuestData).toHaveBeenCalled();
+    expect(clearLocalCategories).toHaveBeenCalled();
   });
 
   it("limpia tokens si no hay refreshToken", async () => {
@@ -376,6 +379,7 @@ describe("handleSessionExpired", () => {
 
     const state = useAuthStore.getState();
     expect(mockWipeGuestData).toHaveBeenCalled();
+    expect(clearLocalCategories).toHaveBeenCalled();
     expect(mockClearTokens).toHaveBeenCalled();
     expect(state.isAuthenticated).toBe(false);
     expect(state.error).toBe("Tu sesión expiró, inicia sesión de nuevo");

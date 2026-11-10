@@ -7,7 +7,7 @@ description: >-
   (src/components/transactions). Úsalo para features de UI, nuevos componentes/pantallas, ajustes de
   layout/estilos o paridad de tokens.
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill
-model: inherit
+model: sonnet
 ---
 
 Eres un ingeniero frontend senior especializado en **UI/componentes de React Native** dentro de **Sprig

@@ -35,11 +35,11 @@ it("subcategorías: el snapshot usa el mismo filtro de categoría que el GET", a
   expect(localRepo.saveSubcategories).toHaveBeenLastCalledWith([{ id: 1 }], [1, 2]);
 });
 
-it("cuentas y empresas podan con su snapshot; categorías nunca se podan", async () => {
+it("cuentas y empresas podan con su snapshot; categorías podan por snapshot completo", async () => {
   await getCategories();
   await getBankAccounts(7);
   await getEmpresas(7);
-  expect(localRepo.saveCategories).toHaveBeenCalledWith([{ id: 1 }]);
+  expect(localRepo.saveCategories).toHaveBeenCalledWith([{ id: 1 }], true);
   expect(localRepo.saveBankAccounts).toHaveBeenCalledWith([{ id: 1 }], [1, 2]);
   expect(localRepo.saveCompanies).toHaveBeenCalledWith([{ id: 1 }], [1, 2]);
 });
