@@ -15,6 +15,7 @@ import {
   cacheUser,
   getCachedUser,
   clearCachedUser,
+  clearLocalCategories,
   migrateGuestDataToUser,
   wipeGuestData,
   GUEST_USER_ID,
@@ -311,6 +312,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       // Es inofensivo si el wipe falla: no bloquear el logout por esto.
     }
+    // El catálogo cacheado incluye categorías propias del usuario que sale.
+    try {
+      await clearLocalCategories();
+    } catch {
+      // Solo caché: no bloquear la salida de sesión.
+    }
     try {
       const { refreshToken } = await getStoredTokens();
       if (refreshToken) {
@@ -341,6 +348,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await wipeGuestData();
     } catch {
       // No bloquear la limpieza de sesión si el wipe falla.
+    }
+    try {
+      await clearLocalCategories();
+    } catch {
+      // Solo caché: no bloquear la salida de sesión.
     }
     await clearTokens();
     await clearCachedUser();

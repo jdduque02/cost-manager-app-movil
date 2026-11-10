@@ -11,8 +11,9 @@ import { useOfflineQuery } from "@/hooks/useOfflineQuery";
 import { useOfflineMutations } from "@/hooks/useOfflineMutations";
 import type { CategoryResponse } from "@/types/catalog.types";
 import type { CreateTransactionRecordDto } from "@/types/transaction.types";
+import { todayInTimeZone } from "@/utils/today";
 import { parseBankMessage } from "@/utils/bank-message-parser";
-import { todayBogota, TX_CURRENCIES, fxNotice, inheritCurrency } from "@/utils/transaction-form";
+import { TX_CURRENCIES, fxNotice, inheritCurrency } from "@/utils/transaction-form";
 import {
   TRANSACTION_TYPES,
   TYPE_LABELS,
@@ -53,6 +54,7 @@ export default function ShareTransactionConfirmScreen({
   sharedText,
 }: ShareTransactionConfirmScreenProps) {
   const userId = useAuthStore((s) => s.userId);
+  const timezone = useAuthStore((s) => s.user?.timezone);
   const queryClient = useQueryClient();
   const { createTransaction: createOffline } = useOfflineMutations();
 
@@ -63,12 +65,12 @@ export default function ShareTransactionConfirmScreen({
     type: parsed.type ?? "expense",
     amount: parsed.amount ?? undefined,
     description: parsed.counterparty ?? undefined,
-    transaction_date: parsed.date ?? todayBogota(),
+    transaction_date: parsed.date ?? todayInTimeZone(timezone),
   });
 
   const { data: categories } = useOfflineQuery(
     {
-      queryKey: ["categories"],
+      queryKey: ["categories", userId],
       queryFn: catalogApi.getCategories,
     },
     () => localRepo.getLocalCategories(),

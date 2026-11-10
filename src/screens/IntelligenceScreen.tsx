@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore } from "@/store/auth.store";
+import { todayInTimeZone, monthStart as monthStartOf } from "@/utils/today";
 import { useOfflineQuery } from "@/hooks/useOfflineQuery";
 import { apiClient } from "@/api/client";
 import * as transactionsApi from "@/api/transactions.api";
@@ -41,7 +42,8 @@ interface TransactionSummaryByCategory {
 }
 
 interface TransactionSummary {
-  totals: { income: number; expenses: number; investments: number; count: number };
+  // `savings` falta en cachés (SQLite/Redis) de antes de T3: se lee como 0 (RF-14).
+  totals: { income: number; expenses: number; investments: number; count: number; savings?: number };
   by_category: TransactionSummaryByCategory[];
 }
 
@@ -108,11 +110,9 @@ export default function IntelligenceScreen() {
     async () => null,
   );
 
-  const monthStart = useMemo(
-    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0],
-    [],
-  );
-  const today = useMemo(() => new Date().toISOString().split("T")[0], []);
+  const timezone = useAuthStore((s) => s.user?.timezone);
+  const today = useMemo(() => todayInTimeZone(timezone), [timezone]);
+  const monthStart = useMemo(() => monthStartOf(today), [today]);
 
   // Un resumen por moneda (la moneda va en la queryKey): tasa de ahorro y
   // presupuesto salen solo de COP; lo que haya en USD se muestra aparte.
@@ -130,7 +130,7 @@ export default function IntelligenceScreen() {
     enabled: !!userId,
   });
   const emptySummary = async (): Promise<TransactionSummary> => ({
-    totals: { income: 0, expenses: 0, investments: 0, count: 0 },
+    totals: { income: 0, expenses: 0, investments: 0, count: 0, savings: 0 },
     by_category: [],
   });
 
@@ -144,7 +144,7 @@ export default function IntelligenceScreen() {
   );
 
   const { data: categories, isLoading: catLoading } = useOfflineQuery(
-    { queryKey: ["categories"], queryFn: catalogApi.getCategories },
+    { queryKey: ["categories", userId], queryFn: catalogApi.getCategories },
     async () => [],
   );
 
@@ -159,10 +159,15 @@ export default function IntelligenceScreen() {
 
   const isLoading = taxLoading || summaryLoading || catLoading || profileLoading;
 
-  const savingsRate =
-    monthSummary && monthSummary.totals.income > 0
-      ? ((monthSummary.totals.income - monthSummary.totals.expenses) / monthSummary.totals.income) * 100
-      : 0;
+  // Ahorro real: neto de transferencias marcadas como ahorro (aportes menos
+  // retiros, `totals.savings`). Capacidad: lo que
+  // sobra del ingreso. Sin ingresos, las dos son "—". Solo COP.
+  const totals = monthSummary?.totals;
+  const income = totals?.income ?? 0;
+  const realSavingsRate = totals && income > 0 ? ((totals.savings ?? 0) / income) * 100 : null;
+  const savingsCapacity = totals && income > 0 ? ((income - totals.expenses) / income) * 100 : null;
+  const pct = (n: number | null) => (n == null ? "—" : `${n.toFixed(1)}%`);
+  const tone = (n: number | null) => (n != null && n < 0 ? "text-destructive" : "text-primary");
 
   const topExpenseCategory = useMemo(() => {
     if (!monthSummary?.by_category.length) return null;
@@ -247,8 +252,12 @@ export default function IntelligenceScreen() {
               </>
             )}
             <View className="flex-row justify-between">
-              <Text className="text-sm font-sans text-foreground">Tasa de ahorro</Text>
-              <Text className="text-sm font-num-semibold text-primary">{savingsRate.toFixed(1)}%</Text>
+              <Text className="text-sm font-sans text-foreground">Ahorro real</Text>
+              <Text className={`text-sm font-num-semibold ${tone(realSavingsRate)}`}>{pct(realSavingsRate)}</Text>
+            </View>
+            <View className="flex-row justify-between">
+              <Text className="text-sm font-sans text-foreground">Capacidad de ahorro</Text>
+              <Text className={`text-sm font-num-semibold ${tone(savingsCapacity)}`}>{pct(savingsCapacity)}</Text>
             </View>
             <View className="flex-row justify-between items-center">
               <Text className="text-sm font-sans text-foreground">Mayor gasto</Text>

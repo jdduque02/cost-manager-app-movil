@@ -160,7 +160,9 @@ export async function wipeGuestData(): Promise<void> {
 
 /**
  * Borra los datos de cualquier usuario y toda la cola `pending_operations`.
- * Conserva `categories` (catálogo del sistema, no es dato del usuario).
+ * De `categories` borra SOLO las propias del usuario (`is_system = 0`), que no
+ * pueden sobrevivir al cambio de cuenta; el catálogo de sistema es global y se
+ * conserva (referencia FK compartida y fallback offline).
  * OJO: descarta operaciones sin sincronizar — llamar solo cuando ya no
  * haya nada que enviar (p. ej. tras sincronizar al cerrar sesión).
  */
@@ -182,7 +184,23 @@ export async function wipeLocalUserData(): Promise<void> {
   await db.withTransactionAsync(async () => {
     // Lista fija de arriba, no input externo: interpolar el nombre es seguro.
     for (const table of USER_TABLES) await db.runAsync(`DELETE FROM ${table}`);
+    // Después de `transactions`/`subcategories` (la referencian por FK).
+    await db.runAsync("DELETE FROM categories WHERE is_system = 0");
   });
+}
+
+/**
+ * Descarta las categorías PROPIAS del usuario (`is_system = 0`) al cerrar sesión /
+ * expirar la sesión, SIN tocar la cola `pending_operations` ni las filas del
+ * usuario (siguen sin sincronizar). Las de sistema son catálogo global: se
+ * conservan activas para el invitado y para el siguiente login offline.
+ * Las propias aún referenciadas por una fila local no se pueden borrar (FK):
+ * quedan inactivas y `getLocalCategories` no las devuelve; el próximo login las
+ * reactiva o elimina con el snapshot del servidor.
+ */
+export async function clearLocalCategories(): Promise<void> {
+  const db = await getDatabase();
+  await dropCategoriesNotIn(db, [], true);
 }
 
 // ─── Utilidad ───────────────────────────────────────────────────────────────
@@ -271,7 +289,7 @@ export async function clearCachedUser(): Promise<void> {
 // Una lista paginada o filtrada NO poda (lo que no vino puede existir), salvo
 // que el filtro acote el snapshot al mismo alcance (subcategorías por categoría).
 
-/** Tablas con poda. `categories` no: el API cachea la lista 60 s y otras tablas la referencian por FK. */
+/** Tablas con poda por `getCachedIds`. `categories` poda aparte (`saveCategories(…, true)`): FK y sin user_id. */
 export type PrunableTable =
   | "bank_accounts"
   | "companies"
@@ -330,8 +348,44 @@ function unsyncedGuard(table: "bank_accounts" | "companies"): string {
 
 // ─── Categorías ──────────────────────────────────────────────────────────────
 
+/**
+ * Oculta (`is_active = 0`) y borra las categorías fuera de `keep`. Las que aún
+ * referencia una transacción o subcategoría local no se pueden borrar (FK ON):
+ * quedan ocultas, que es lo que ve el usuario online (desactivadas/ajenas).
+ */
+async function dropCategoriesNotIn(
+  db: SQLite.SQLiteDatabase,
+  keep: number[],
+  onlyOwn = false,
+): Promise<void> {
+  const conds = [
+    ...(keep.length ? [`id NOT IN (${keep.map(() => "?").join(",")})`] : []),
+    // `onlyOwn`: el catálogo de sistema es global y compartido, nunca se descarta.
+    ...(onlyOwn ? ["is_system = 0"] : []),
+  ];
+  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(`UPDATE categories SET is_active = 0 ${where}`, keep);
+    await db.runAsync(
+      `DELETE FROM categories ${where ? `${where} AND` : "WHERE"}
+         NOT EXISTS (SELECT 1 FROM transactions t WHERE t.category_id = categories.id)
+         AND NOT EXISTS (SELECT 1 FROM subcategories s WHERE s.category_id = categories.id)`,
+      keep,
+    );
+  });
+}
+
+/**
+ * `snapshot = true` SOLO con la respuesta completa de `GET /catalog/categories`
+ * (sistema activas + propias activas del usuario): reemplaza el conjunto local,
+ * podando lo que ya no viene (desactivadas, ajenas del usuario anterior). Un lote
+ * parcial (p. ej. la categoría recién creada) NO poda. Un array vacío tampoco:
+ * el catálogo del sistema nunca está vacío, así que vacío = respuesta anómala y
+ * vaciar la caché dejaría el fallback offline sin categorías.
+ */
 export async function saveCategories(
   categories: CategoryResponse[],
+  snapshot = false,
 ): Promise<void> {
   const db = await getDatabase();
   // Un solo `INSERT OR REPLACE` por lote en vez de uno por fila commiteado
@@ -340,8 +394,8 @@ export async function saveCategories(
   await db.withTransactionAsync(async () => {
     for (const cat of categories) {
       await db.runAsync(
-        `INSERT OR REPLACE INTO categories (id, name, icon_key, color_hex, group_type, sort_order, is_active, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR REPLACE INTO categories (id, name, icon_key, color_hex, group_type, sort_order, is_active, is_system, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           nz(cat.id),
           nz(cat.name),
@@ -350,18 +404,28 @@ export async function saveCategories(
           nz(cat.group_type),
           nz(cat.sort_order) ?? 0,
           cat.is_active ? 1 : 0,
+          // Un servidor viejo sin `is_system` solo devolvía el catálogo del sistema.
+          cat.is_system === false ? 0 : 1,
           nz(cat.created_at),
         ],
       );
     }
   });
+  if (snapshot && categories.length > 0) {
+    // Best-effort, como `pruneMissing`: si falla, quedan fantasmas pero datos frescos.
+    try {
+      await dropCategoriesNotIn(db, categories.map((c) => c.id));
+    } catch (err) {
+      console.warn("[cache] no se pudo podar categories", err);
+    }
+  }
 }
 
 export async function getLocalCategories(): Promise<CategoryResponse[]> {
   const db = await getDatabase();
   // `WHERE is_active = 1` espeja CategoryRepository.findAll() del API: online el
-  // usuario solo ve activas, y sin este filtro una categoría desactivada desde
-  // otroDevice seguía apareciendo en el fallback offline.
+  // usuario solo ve activas. `saveCategories(…, true)` poda lo que el servidor ya
+  // no devuelve; lo que sigue referenciado por una fila local queda con is_active = 0.
   const rows = await db.getAllAsync<{
     id: number;
     name: string;
@@ -370,6 +434,7 @@ export async function getLocalCategories(): Promise<CategoryResponse[]> {
     group_type: string;
     sort_order: number;
     is_active: number;
+    is_system: number | null;
     created_at: string;
   }>("SELECT * FROM categories WHERE is_active = 1");
   return rows.map((r) => ({
@@ -380,6 +445,7 @@ export async function getLocalCategories(): Promise<CategoryResponse[]> {
     group_type: r.group_type as CategoryResponse["group_type"],
     sort_order: r.sort_order,
     is_active: r.is_active === 1,
+    is_system: r.is_system !== 0,
     created_at: r.created_at,
   }));
 }

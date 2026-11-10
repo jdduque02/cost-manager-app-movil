@@ -23,7 +23,8 @@ export async function getCategories(): Promise<CategoryResponse[]> {
   // cualquier fallback offline al crear una transacción revienta por
   // violación de foreign key, aunque la app esté online la mayor parte del
   // tiempo (ver createLocalTransaction en local.repository.ts).
-  await localRepo.saveCategories(categories).catch(() => {});
+  // Snapshot completo (solo si es una lista): poda desactivadas/ajenas del caché.
+  await localRepo.saveCategories(categories, isListPayload(data)).catch(() => {});
   return categories;
 }
 

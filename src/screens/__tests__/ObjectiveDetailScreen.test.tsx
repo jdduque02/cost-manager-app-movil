@@ -16,6 +16,7 @@ import { useOfflineQuery } from "@/hooks/useOfflineQuery";
 import { useAuthStore } from "@/store/auth.store";
 import { useOfflineStore } from "@/store/offline.store";
 import * as objectivesApi from "@/api/objectives.api";
+import { formatCurrency } from "@/utils/format";
 import type { FinancialObjectiveResponse } from "@/types/objective.types";
 
 jest.mock("@/hooks/useOfflineQuery", () => ({
@@ -148,6 +149,37 @@ describe("ObjectiveDetailScreen — fila 'Meses de gastos cubiertos'", () => {
     );
 
     expect(screen.queryByText("Meses de gastos cubiertos")).toBeNull();
+  });
+});
+
+describe("ObjectiveDetailScreen — días restantes en la zona del usuario", () => {
+  afterEach(() => jest.useRealTimers());
+
+  it("31-dic 21:00 COT con end_date 2026-01-01: 1 día, fecha sin corrimiento y cuota coherente", () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-01-01T02:00:00Z"));
+    renderScreen(
+      baseObjective({ end_date: "2026-01-01", target_amount: 30000, current_balance: 0 }),
+    );
+
+    expect(screen.getByText("1 días")).toBeTruthy();
+    expect(screen.getByText("1/1/2026")).toBeTruthy();
+    // 30000 / (1/30) = 900000
+    expect(screen.getByText(formatCurrency(900000))).toBeTruthy();
+  });
+
+  it("end_date igual a hoy: 0 días y cuota 0, nunca negativo", () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-01-01T02:00:00Z"));
+    renderScreen(baseObjective({ end_date: "2025-12-31T00:00:00Z" }));
+
+    expect(screen.getByText("0 días")).toBeTruthy();
+    expect(screen.getByText(formatCurrency(0))).toBeTruthy();
+  });
+
+  it("end_date ya vencida: 0 días", () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-01-01T02:00:00Z"));
+    renderScreen(baseObjective({ end_date: "2025-12-01" }));
+
+    expect(screen.getByText("0 días")).toBeTruthy();
   });
 });
 

@@ -19,6 +19,8 @@ export interface CategoryResponse {
   color_hex?: string | null;
   sort_order: number;
   is_active: boolean;
+  /** true = categoría del sistema (global, no editable); false = propia del usuario. */
+  is_system: boolean;
   created_at: string;
 }
 

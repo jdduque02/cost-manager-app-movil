@@ -254,11 +254,16 @@ export async function syncPendingOperations(): Promise<SyncResult> {
         break;
       }
       if (kind === "client") {
+        // Un 404 de UPDATE puede ser "ya no existe" o un category_id ajeno/
+        // inactivo: si el API trae un mensaje específico se muestra; el texto
+        // genérico ("Not found") o la ausencia de cuerpo conservan el de "ya no existe".
+        const apiMessage = apiErrorMessage(err, "");
+        const specific404 = apiMessage && !/^not found$/i.test(apiMessage.trim());
         await markOperationFailed(
           op.id,
-          status === 404 && op.operation === "UPDATE"
+          status === 404 && op.operation === "UPDATE" && !specific404
             ? "Ya no existe en el servidor (se borró desde otro dispositivo)"
-            : apiErrorMessage(err, `El servidor rechazó el cambio (HTTP ${status ?? "4xx"})`),
+            : apiMessage || `El servidor rechazó el cambio (HTTP ${status ?? "4xx"})`,
           MAX_RETRIES,
         );
         op.retryCount = MAX_RETRIES;

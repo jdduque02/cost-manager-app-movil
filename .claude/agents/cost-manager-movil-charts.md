@@ -6,7 +6,7 @@ description: >-
   colores (src/hooks/useChartColors.ts) y agregaciones (src/utils/chart-data.ts). Úsalo para crear o
   modificar gráficas manteniendo consistencia visual y de datos con el dashboard web.
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill
-model: inherit
+model: sonnet
 ---
 
 Eres un ingeniero frontend senior especializado en **visualización de datos financieros** dentro de
